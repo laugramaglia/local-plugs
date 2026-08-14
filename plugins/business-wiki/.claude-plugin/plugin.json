@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "business-wiki",
+  "displayName": "Business Wiki",
+  "version": "0.1.0",
+  "description": "Wiki-as-source-of-truth for business rules, with derived rules JSON + OpenAPI and keeper agents.",
+  "author": {
+    "name": "Lau"
+  },
+  "license": "MIT",
+  "keywords": ["documentation", "adr", "openapi", "business-rules", "drift"],
+  "userConfig": {
+    "wiki_root": {
+      "type": "string",
+      "title": "Wiki root",
+      "description": "Directory holding the wiki. It is the source of truth.",
+      "default": "business-wiki"
+    },
+    "rules_root": {
+      "type": "string",
+      "title": "Rules root",
+      "description": "Directory holding the derived machine-readable rules.",
+      "default": "business-rules"
+    },
+    "openapi_path": {
+      "type": "string",
+      "title": "OpenAPI file",
+      "description": "Derived OpenAPI document. Leave empty for projects with no HTTP surface.",
+      "default": "openapi/api.yaml"
+    },
+    "contract_source": {
+      "type": "string",
+      "title": "Code contract source",
+      "description": "Path the openapi-keeper reads real endpoints from (e.g. worker/src, src/routes, app/controllers).",
+      "default": ""
+    },
+    "strict_check": {
+      "type": "string",
+      "title": "Fail on validator warnings",
+      "description": "\"true\" makes warnings fatal in the validators.",
+      "default": "false"
+    }
+  }
+}

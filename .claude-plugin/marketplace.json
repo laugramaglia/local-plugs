@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "local-plugs",
+  "owner": {
+    "name": "Lau",
+    "email": "laureano.gramaglia@beclevercorp.com"
+  },
+  "description": "Lau's local Claude Code plugins.",
+  "metadata": {
+    "pluginRoot": "./plugins"
+  },
+  "plugins": [
+    {
+      "name": "business-wiki",
+      "source": "./plugins/business-wiki",
+      "displayName": "Business Wiki",
+      "description": "Wiki-as-source-of-truth for business rules, with derived rules JSON and OpenAPI, plus keeper agents that regenerate them and detect drift.",
+      "keywords": ["documentation", "adr", "openapi", "business-rules", "drift"],
+      "category": "documentation",
+      "license": "MIT"
+    }
+  ]
+}

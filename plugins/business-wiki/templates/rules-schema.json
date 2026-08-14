@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "business-rules/_schema.json",
+  "title": "Derived business rules for one feature",
+  "description": "Generated from the wiki by business-wiki:business-rules-keeper. The wiki is the source of truth; never hand-edit this file.",
+  "type": "object",
+  "required": ["_source", "feature", "updated", "rules"],
+  "additionalProperties": false,
+  "properties": {
+    "_source": {
+      "type": "string",
+      "description": "Wiki directory this file was derived from."
+    },
+    "_generated_by": { "type": "string" },
+    "feature": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+    "updated": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "statement", "page", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+          "statement": { "type": "string", "minLength": 10 },
+          "value": {
+            "description": "The literal constant, expression, or enum where the rule has one.",
+            "type": ["string", "number", "boolean", "array", "null"]
+          },
+          "page": {
+            "type": "string",
+            "enum": ["index", "flow", "screens", "states", "errors", "copy", "validations", "api", "decisions", "related"]
+          },
+          "code_refs": { "type": "array", "items": { "type": "string" } },
+          "adrs": { "type": "array", "items": { "type": "string", "pattern": "^\\d{4}$" } },
+          "status": {
+            "type": "string",
+            "enum": ["enforced", "documented-not-enforced", "aspirational"],
+            "description": "enforced: the code does this today. documented-not-enforced: the wiki states it, the code does not (must also appear in shared/divergences.md). aspirational: planned; implementation is a stub or absent."
+          },
+          "superseded_by": { "type": "string" }
+        }
+      }
+    },
+    "enums": {
+      "type": "object",
+      "description": "Closed sets copied verbatim from the wiki, for keyed lookup.",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    }
+  }
+}
