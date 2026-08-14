@@ -31,7 +31,21 @@ n=$(find "$WIKI_ROOT/features" -name index.md -type f 2>/dev/null | wc -l | tr -
 [ "${n:-0}" -gt 0 ] && check ok "$n feature index page(s)" || check fail "no features/*/index.md"
 
 if [ -n "$SPEC" ]; then
-	[ -f "$SPEC" ] && check ok "$SPEC" || check fail "$SPEC"
+	if [ -f "$SPEC" ]; then
+		check ok "$SPEC"
+	else
+		# Same discovery rule as check-openapi.sh: a project that named its spec
+		# something else is configured fine, not broken.
+		dir=$(dirname "$SPEC")
+		[ "$dir" = "." ] && dir=openapi
+		found=$(find "$dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) 2>/dev/null | sort)
+		n=$(printf '%s\n' "$found" | grep -c .)
+		if [ "$n" -eq 1 ]; then
+			check ok "$(printf '%s' "$found") (discovered)"
+		else
+			check fail "$SPEC"
+		fi
+	fi
 else
 	printf '  skip  OpenAPI (openapi_path is empty)\n'
 fi

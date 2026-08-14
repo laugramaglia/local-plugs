@@ -29,10 +29,25 @@ if [ -z "$SPEC" ]; then
 	exit 0
 fi
 
-[ -f "$SPEC" ] || {
-	err "$SPEC does not exist — run /business-wiki:derive"
-	exit 1
-}
+# The configured path may be the default while the project named its spec something
+# else. Rather than demanding configuration, discover it when there is exactly one
+# candidate — ambiguity is the only case worth asking a human about.
+if [ ! -f "$SPEC" ]; then
+	dir=$(dirname "$SPEC")
+	[ "$dir" = "." ] && dir=openapi
+	found=$(find "$dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) 2>/dev/null | sort)
+	n=$(printf '%s\n' "$found" | grep -c . )
+	if [ "$n" -eq 1 ]; then
+		SPEC=$(printf '%s' "$found")
+		printf 'check-openapi: using discovered spec %s\n' "$SPEC"
+	elif [ "$n" -gt 1 ]; then
+		err "$SPEC does not exist and $dir/ holds $n candidates — set openapi_path"
+		exit 1
+	else
+		err "$SPEC does not exist — run /business-wiki:derive"
+		exit 1
+	fi
+fi
 
 # ------------------------------------------------------------------ it parses
 
