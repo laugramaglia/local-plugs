@@ -9,7 +9,9 @@
 set -u
 
 WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
-SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH:-openapi/api.yaml}"
+# `-` not `:-` on purpose: an explicitly empty value means "this project has no HTTP
+# surface" and must not fall back to the default.
+SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-openapi/api.yaml}"
 CONTRACT_SRC="${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE:-}"
 STRICT="${CLAUDE_PLUGIN_OPTION_STRICT_CHECK:-false}"
 

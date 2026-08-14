@@ -7,7 +7,8 @@ set -u
 
 WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
 RULES_ROOT="${CLAUDE_PLUGIN_OPTION_RULES_ROOT:-business-rules}"
-SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH:-openapi/api.yaml}"
+# `-` not `:-`: an explicitly empty value means the project has no HTTP surface.
+SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-openapi/api.yaml}"
 
 ok=0
 check() {
