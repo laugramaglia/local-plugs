@@ -14,7 +14,7 @@
 
 set -u
 
-WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
+WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-docs/wiki}"
 STRICT="${CLAUDE_PLUGIN_OPTION_STRICT_CHECK:-false}"
 
 fails=0

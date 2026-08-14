@@ -16,7 +16,7 @@ Once this repo is on GitHub, `/plugin marketplace add <owner>/local-plugs` works
 
 | Plugin | What it gives you |
 | --- | --- |
-| [`business-wiki`](plugins/business-wiki) | A wiki that is the source of truth for business rules, plus derived `business-rules/*.json` and OpenAPI, plus four keeper agents that regenerate them and report drift. |
+| [`business-wiki`](plugins/business-wiki) | A `business-docs/` tree — `wiki/` as the source of truth for business rules, with derived `rules/*.json` and `openapi/` — plus four keeper agents that regenerate them and report drift. |
 
 ## Adding a plugin
 

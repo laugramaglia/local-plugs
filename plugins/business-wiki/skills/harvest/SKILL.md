@@ -16,7 +16,7 @@ Scope: `$ARGUMENTS` if given (a branch, a PR number, a commit range); otherwise 
    - What did the spec or plan say, and what did the code end up doing? The delta is either a wiki update or an admission the plan changed.
    - Which decisions were taken in this track that have no ADR?
    - Which divergences surfaced that are not in `shared/divergences.md`?
-   - Which rules are now cited or implemented in code but absent from the wiki (and so from `business-rules/`)?
+   - Which rules are now cited or implemented in code but absent from the wiki (and so from `business-docs/rules/`)?
 
 3. **Re-derive** the affected features with `/business-wiki:derive`.
 

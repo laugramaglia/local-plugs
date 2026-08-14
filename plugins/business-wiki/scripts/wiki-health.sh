@@ -5,10 +5,10 @@
 
 set -u
 
-WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
-RULES_ROOT="${CLAUDE_PLUGIN_OPTION_RULES_ROOT:-business-rules}"
+WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-docs/wiki}"
+RULES_ROOT="${CLAUDE_PLUGIN_OPTION_RULES_ROOT:-business-docs/rules}"
 # `-` not `:-`: an explicitly empty value means the project has no HTTP surface.
-SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-openapi/api.yaml}"
+SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-business-docs/openapi/api.yaml}"
 
 ok=0
 check() {
@@ -21,6 +21,18 @@ check() {
 }
 
 printf 'business-wiki health:\n'
+
+# When the three roots are grouped under one directory (the default layout), that
+# directory owns the authority story. Informational only: a project that scattered
+# the roots deliberately has no group root and is not broken.
+GROUP_ROOT=$(dirname "$WIKI_ROOT")
+if [ "$GROUP_ROOT" != "." ] && [ "$GROUP_ROOT" = "$(dirname "$RULES_ROOT")" ]; then
+	if [ -f "$GROUP_ROOT/README.md" ]; then
+		check ok "$GROUP_ROOT/README.md"
+	else
+		printf '  warn  %s/README.md is missing — no page explains which format wins\n' "$GROUP_ROOT"
+	fi
+fi
 
 [ -f "$WIKI_ROOT/README.md" ] && check ok "$WIKI_ROOT/README.md" || check fail "$WIKI_ROOT/README.md"
 [ -d "$WIKI_ROOT/decisions" ] && check ok "$WIKI_ROOT/decisions/" || check fail "$WIKI_ROOT/decisions/"
@@ -38,7 +50,7 @@ if [ -n "$SPEC" ]; then
 		# Same discovery rule as check-openapi.sh: a project that named its spec
 		# something else is configured fine, not broken.
 		dir=$(dirname "$SPEC")
-		[ "$dir" = "." ] && dir=openapi
+		[ "$dir" = "." ] && dir=business-docs/openapi
 		found=$(find "$dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) 2>/dev/null | sort)
 		n=$(printf '%s\n' "$found" | grep -c .)
 		if [ "$n" -eq 1 ]; then

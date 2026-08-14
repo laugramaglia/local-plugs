@@ -8,7 +8,7 @@ argument-hint: <feature-slug>
 
 Target feature: `$ARGUMENTS` (if empty, list the features under `<wiki root>/features/` plus any feature you can see in the code that has no wiki entry, and ask which one).
 
-Config: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-wiki`, `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-rules`. Templates at `${CLAUDE_PLUGIN_ROOT}/templates/`.
+Config: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-docs/wiki`, `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-docs/rules`. Templates at `${CLAUDE_PLUGIN_ROOT}/templates/`.
 
 ## Steps
 

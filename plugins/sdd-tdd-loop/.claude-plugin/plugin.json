@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "sdd-tdd-loop",
+  "displayName": "SDD/TDD Loop",
+  "version": "0.1.0",
+  "description": "Local task -> spec -> use cases -> red/green/refactor. A spec-driven + test-driven working loop with a plain-file task store; no board, no PR mechanics.",
+  "author": {
+    "name": "Lau"
+  },
+  "license": "MIT",
+  "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow"],
+  "userConfig": {
+    "tasks_path": {
+      "type": "string",
+      "title": "Task store",
+      "description": "JSON file holding the local tasks. Replaces the board.",
+      "default": ".sdd-tdd/tasks.json"
+    },
+    "tracks_dir": {
+      "type": "string",
+      "title": "Tracks directory",
+      "description": "Where a task's spec.md / contract.md / use-cases.json live.",
+      "default": "tracks"
+    },
+    "spec_baseline": {
+      "type": "string",
+      "title": "RF renumbering baseline",
+      "description": "\"git\" compares spec.md against git HEAD to catch renumbered RF/AC headers. \"off\" skips it (non-git projects).",
+      "default": "git"
+    }
+  }
+}

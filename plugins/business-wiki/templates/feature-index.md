@@ -35,7 +35,7 @@ One paragraph: what this feature is for, from the user's point of view, and wher
 
 ## Rules
 
-Indexed machine-readable form: `business-rules/FEATURE_SLUG.json`.
+Indexed machine-readable form: `business-docs/rules/FEATURE_SLUG.json`.
 
 | id | Rule | Value | Where |
 | --- | --- | --- | --- |

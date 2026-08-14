@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "business-rules/_schema.json",
+  "$id": "business-docs/rules/_schema.json",
   "title": "Derived business rules for one feature",
   "description": "Generated from the wiki by business-wiki:business-rules-keeper. The wiki is the source of truth; never hand-edit this file.",
   "type": "object",

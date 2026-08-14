@@ -8,8 +8,8 @@
 
 set -u
 
-WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
-RULES_ROOT="${CLAUDE_PLUGIN_OPTION_RULES_ROOT:-business-rules}"
+WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-docs/wiki}"
+RULES_ROOT="${CLAUDE_PLUGIN_OPTION_RULES_ROOT:-business-docs/rules}"
 STRICT="${CLAUDE_PLUGIN_OPTION_STRICT_CHECK:-false}"
 
 fails=0
@@ -111,19 +111,20 @@ for f in "$RULES_ROOT"/*.json; do
 			wrn "$f references ADR $a but $WIKI_ROOT/decisions/$a-*.md does not exist"
 	done
 
-	# the wiki's own index must agree with what was derived
-	idx="$WIKI_ROOT/features/$feat/rules.json"
-	if [ -f "$idx" ]; then
-		for id in $(grep -o '"[a-z0-9][a-z0-9-]*"' "$idx" 2>/dev/null | tr -d '"' | sort -u); do
-			case "$id" in
-			_source | _derived | _comment | feature | rule_ids | "$feat") continue ;;
-			esac
-			printf '%s\n' "$ids" | grep -qx "$id" ||
-				err "$idx lists rule id '$id' which is not in $f — re-derive"
+	# every rule id must be findable in the wiki page it claims to come from —
+	# the wiki is the source, so a derived id with no textual anchor upstream
+	# means either a hand-edit here or a rename that was never propagated.
+	for id in $ids; do
+		found=no
+		for p in "$WIKI_ROOT"/features/"$feat"/*.md; do
+			[ -f "$p" ] || continue
+			grep -q "$id" "$p" && {
+				found=yes
+				break
+			}
 		done
-	else
-		wrn "$WIKI_ROOT/features/$feat/rules.json (index) is missing"
-	fi
+		[ "$found" = yes ] || wrn "$f rule id '$id' does not appear anywhere in $WIKI_ROOT/features/$feat/ — hand-edited, or renamed upstream?"
+	done
 done
 
 if [ "$fails" -gt 0 ]; then

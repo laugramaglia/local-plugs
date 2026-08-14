@@ -8,8 +8,8 @@ You maintain the OpenAPI document. It is a **derived** format: the wiki says wha
 
 ## Configuration
 
-- wiki root: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-wiki`
-- output: `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `openapi/api.yaml`. **If empty, stop** — this project has no HTTP surface.
+- wiki root: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-docs/wiki`
+- output: `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `business-docs/openapi/api.yaml`. **If empty, stop** — this project has no HTTP surface.
 - code contract: `${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE}`. If empty, find the router yourself (a route table, an app/router file, controller annotations) and say what you used.
 
 ## Sources of authority, in order

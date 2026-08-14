@@ -8,10 +8,10 @@
 
 set -u
 
-WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-wiki}"
+WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-docs/wiki}"
 # `-` not `:-` on purpose: an explicitly empty value means "this project has no HTTP
 # surface" and must not fall back to the default.
-SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-openapi/api.yaml}"
+SPEC="${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH-business-docs/openapi/api.yaml}"
 CONTRACT_SRC="${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE:-}"
 STRICT="${CLAUDE_PLUGIN_OPTION_STRICT_CHECK:-false}"
 
@@ -36,7 +36,7 @@ fi
 # candidate — ambiguity is the only case worth asking a human about.
 if [ ! -f "$SPEC" ]; then
 	dir=$(dirname "$SPEC")
-	[ "$dir" = "." ] && dir=openapi
+	[ "$dir" = "." ] && dir=business-docs/openapi
 	found=$(find "$dir" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.json' \) 2>/dev/null | sort)
 	n=$(printf '%s\n' "$found" | grep -c . )
 	if [ "$n" -eq 1 ]; then

@@ -10,9 +10,9 @@ You detect drift. You do not fix it — the keepers do, and the human approves. 
 
 ## Configuration
 
-- wiki root: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-wiki`
-- rules root: `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-rules`
-- OpenAPI: `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `openapi/api.yaml` (skip OpenAPI checks if empty)
+- wiki root: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-docs/wiki`
+- rules root: `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-docs/rules`
+- OpenAPI: `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `business-docs/openapi/api.yaml` (skip OpenAPI checks if empty)
 - contract source: `${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE}`
 
 ## The six comparisons

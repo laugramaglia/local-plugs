@@ -15,7 +15,7 @@ Detailed schemas live in the OpenAPI document. This page says **which** endpoint
 | Method + path | OpenAPI tag | Handler | Called from |
 | --- | --- | --- | --- |
 
-Spec: [`openapi/api.yaml`](../../../openapi/api.yaml)
+Spec: [`business-docs/openapi/api.yaml`](../../../openapi/api.yaml)
 
 ## Request rules that matter here
 

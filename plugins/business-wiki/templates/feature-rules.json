@@ -1,7 +1,0 @@
-{
-  "_comment": "Index only. The rules themselves live in the wiki pages; the derived machine-readable copy lives in the rules root. Regenerate with /business-wiki:derive.",
-  "_source": "business-wiki/features/FEATURE_SLUG/",
-  "_derived": "business-rules/FEATURE_SLUG.json",
-  "feature": "FEATURE_SLUG",
-  "rule_ids": []
-}

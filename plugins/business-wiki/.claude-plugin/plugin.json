@@ -14,19 +14,19 @@
       "type": "string",
       "title": "Wiki root",
       "description": "Directory holding the wiki. It is the source of truth.",
-      "default": "business-wiki"
+      "default": "business-docs/wiki"
     },
     "rules_root": {
       "type": "string",
       "title": "Rules root",
       "description": "Directory holding the derived machine-readable rules.",
-      "default": "business-rules"
+      "default": "business-docs/rules"
     },
     "openapi_path": {
       "type": "string",
       "title": "OpenAPI file",
       "description": "Derived OpenAPI document. Leave empty for projects with no HTTP surface.",
-      "default": "openapi/api.yaml"
+      "default": "business-docs/openapi/api.yaml"
     },
     "contract_source": {
       "type": "string",

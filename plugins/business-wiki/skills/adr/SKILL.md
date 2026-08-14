@@ -8,7 +8,7 @@ argument-hint: <decision title>
 
 Decision to record: `$ARGUMENTS` (if empty, ask what was decided and what it rules out).
 
-Config: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-wiki`. Template: `${CLAUDE_PLUGIN_ROOT}/templates/adr.md`.
+Config: `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-docs/wiki`. Template: `${CLAUDE_PLUGIN_ROOT}/templates/adr.md`.
 
 ## Steps
 

@@ -1,13 +1,13 @@
 ---
 name: bootstrap
-description: First run of the business wiki in a repo. Detects the stack, proposes the feature list from the real routes/screens/endpoints, and scaffolds business-wiki/ plus the derived formats.
+description: First run of the business wiki in a repo. Detects the stack, proposes the feature list from the real routes/screens/endpoints, and scaffolds business-docs/ — the wiki plus the derived formats.
 ---
 
 # Bootstrap the business wiki
 
 Set up the wiki-as-source-of-truth system in this repository. Stack-agnostic: what you find in the repo decides the shape, not any assumption about the framework.
 
-Config (fall back to the defaults when unset): `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-wiki`, `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-rules`, `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `openapi/api.yaml`, `${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE}`.
+Config (fall back to the defaults when unset): `${CLAUDE_PLUGIN_OPTION_WIKI_ROOT}` → `business-docs/wiki`, `${CLAUDE_PLUGIN_OPTION_RULES_ROOT}` → `business-docs/rules`, `${CLAUDE_PLUGIN_OPTION_OPENAPI_PATH}` → `business-docs/openapi/api.yaml`, `${CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE}`.
 
 Templates: `${CLAUDE_PLUGIN_ROOT}/templates/`. Read each one before writing from it.
 
@@ -42,17 +42,20 @@ Show the user the proposed list with a one-line justification each, and let them
 Create, from the templates:
 
 ```
-<wiki root>/README.md                     index, maintenance rules, how the 3 formats relate
+<group root>/README.md                    the authority story, from templates/docs-readme.md
+<wiki root>/README.md                     the wiki's own index, from templates/wiki-readme.md
 <wiki root>/decisions/                    (empty; ADRs come in step 5)
-<wiki root>/features/<feature>/           the 11-file page set per feature
+<wiki root>/features/<feature>/           the 10-page set per feature
 <wiki root>/shared/                       glossary.md, data-types.md, error-codes.md,
                                           divergences.md, a11y.md, + any cross-cutting
                                           concern this project actually has
                                           (i18n, offline, theming, security, performance)
 <wiki root>/shared/templates/             copies of the plugin templates, for humans
 <rules root>/README.md  <rules root>/_schema.json
-<openapi path>          openapi/README.md  (skip entirely if openapi_path is empty)
+<openapi path>          <openapi dir>/README.md  (skip entirely if openapi_path is empty)
 ```
+
+`<group root>` is the deepest directory that contains the wiki, rules, and OpenAPI paths — `business-docs` with the defaults. When the three are configured into unrelated trees there is no group root: skip that README and fold the authority story into `<wiki root>/README.md` instead.
 
 Only create `shared/` pages for concerns this project has. An empty `security.md` in a project with no auth is noise.
 

@@ -1,0 +1,49 @@
+{
+  "// everything here is optional": "with no config file at all the plugin uses these exact defaults",
+
+  "tasksPath": ".sdd-tdd/tasks.json",
+  "tracksDir": "tracks",
+
+  "// states": "ORDER IS THE WORKFLOW. task.sh only moves a task forward through this list; 'blocked' is reachable from anywhere and leads back anywhere. Name as many or as few as your process really has.",
+  "states": ["new", "specced", "implementing", "verify", "done", "blocked"],
+
+  "// advanceTo": "which state each phase ends in, so the skills pass @spec / @implement instead of a literal state name.",
+  "advanceTo": {
+    "spec": "specced",
+    "implement": "verify"
+  },
+
+  "// specBaseline": "'git' reads spec.md's version in HEAD to catch renumbered RF/AC headers. 'off' skips it — nothing else in this plugin touches git.",
+  "specBaseline": "git",
+
+  "// crossCheck": "the project's source of documented business truth, consulted before use cases are written. null or absent is a supported configuration meaning 'this project has none' — the step is skipped silently.",
+  "crossCheck": null,
+
+  "// crossCheck example": {
+    "mode": "optional",
+    "label": "business-wiki",
+    "tools": {
+      "rules": "mcp__example__get_business_rules",
+      "screens": "mcp__example__list_screens",
+      "spec": "mcp__example__get_spec"
+    }
+  },
+
+  "// featureModules": "where a feature module lives per platform. {name} lowercases, {Name} capitalises. Absent means probe-scaffold-need.sh answers UNDECLARED rather than guessing that nothing needs scaffolding.",
+  "featureModules": null,
+
+  "// featureModules example": {
+    "android": "android/feature/{name}",
+    "ios": "ios/Packages/Feature{Name}",
+    "flutter": "packages/features/{name}"
+  },
+
+  "// implementAgents": "platform key -> the subagent that owns that platform's code. Absent means mode=self: the loop does the work itself, same order.",
+  "implementAgents": null,
+
+  "// parityAgent": "read-only subagent that audits cross-platform consistency once two platforms are green on one case. Only meaningful with more than one platform.",
+  "parityAgent": null,
+
+  "// testSeams": "extra seams for a project whose test culture the built-in markers don't describe. key -> {marker: <regex>, glob: <file glob>}.",
+  "testSeams": {}
+}
