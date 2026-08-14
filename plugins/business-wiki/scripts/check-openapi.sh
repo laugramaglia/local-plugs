@@ -66,8 +66,11 @@ spec_paths=$(sed -n '/^paths:/,/^[a-z]/p' "$SPEC" | sed -n 's/^  \(\/[A-Za-z0-9_
 
 for f in "$WIKI_ROOT"/features/*/api.md; do
 	[ -f "$f" ] || continue
-	# a path reference in a wiki table looks like `GET /taxonomy` or `POST /quiz`
-	refs=$(grep -oE '\`(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[A-Za-z0-9_{}/:.-]*\`' "$f" 2>/dev/null |
+	# A path reference in a wiki table looks like `GET /taxonomy` or `POST /quiz`.
+	# Everything from a '## Planned' heading onward names endpoints that deliberately
+	# do NOT exist yet, so it is excluded — documenting an absence is not a broken ref.
+	refs=$(awk '/^##[[:space:]]+Planned/ { exit } { print }' "$f" |
+		grep -oE '\`(GET|POST|PUT|PATCH|DELETE)[[:space:]]+/[A-Za-z0-9_{}/:.-]*\`' 2>/dev/null |
 		tr -d '`' | awk '{print $2}' | sort -u)
 	for p in $refs; do
 		printf '%s\n' "$spec_paths" | grep -qx "$p" ||
