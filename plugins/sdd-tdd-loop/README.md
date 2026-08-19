@@ -6,12 +6,14 @@ A spec-driven + test-driven loop you run **one task at a time**.
 /sdd-init                            →  this repo's seam profile + language skill (once)
 /sdd-task new "<what needs doing>"   →  a task in .sdd-tdd/tasks.json
 /sdd-spec #1                         →  tracks/<area>/: spec.md + use-cases.json
+/sdd-pr loans                        →  a DRAFT PR carrying the spec, from the start
 /sdd-implement <area>                →  one test per use case: red → green → refactored
+/sdd-commit loans                    →  one Conventional Commit; refreshes the PR
 /sdd-status                          →  where everything stands
 ```
 
-Five skills, sixteen scripts, no network, no board, no cloud CLI, no PR
-mechanics, no branches, no commits, no poller.
+Seven skills, eighteen scripts, no network, no board, no cloud CLI, no poller,
+and nothing that starts by itself.
 
 **The plugin is the process; the language lives in your repo.** Nothing here
 knows xunit from pytest from `flutter test`. What test levels a repo has, and how
@@ -27,9 +29,16 @@ watching needs to be *told* where tracks live, what the states are and which
 subagent owns which platform. A loop a human runs per task doesn't. Those are
 fixed constants now.
 
-The tradeoff is deliberate: nothing here integrates with your tracker, nothing
-opens a PR, and nothing starts by itself. Tasks live in one JSON file you commit,
-and the git work stays yours.
+The tradeoff is deliberate: nothing here integrates with your tracker, and
+nothing starts by itself. Tasks live in one JSON file you commit.
+
+Git is the one thing that came back, and only in the two places a human would do
+it anyway: `/sdd-commit` drafts a Conventional Commit from the diff and the case
+evidence, then stages the paths it named; `/sdd-pr` opens the track's PR **as a
+draft before the work is done** and regenerates its body from the spec every time
+a case lands. Neither merges, neither rewrites history, and no *script* in this
+plugin mutates git at all — the mutating commands are issued in the conversation,
+where you see `git add <paths>` before it runs.
 
 ## Install
 
@@ -339,6 +348,41 @@ inventing.
 **POTENTIAL CONFLICT**, and a conflict is a stop — not a spec written over a
 documented rule.
 
+### The commit and the PR are drafted, then reviewed with you
+
+Both skills run in the same order — **draft, ask, act** — because a question asked
+before the draft exists has to be answered in the abstract, and most of them the
+diff already answers. A draft shown first turns the exchange into review, which is
+the only form in which a message gets better rather than longer.
+
+`commit-draft.sh` reports what changed grouped by the unit a `scope` names, the
+*evidence* for a type (never the verdict: `feat` vs `fix` is a claim about intent),
+and the track's cases in flight with their `Assert` text — the one sentence a
+subject line should come from. It flags a diff spanning two groups as a split, and
+it never stages: `/sdd-commit` names explicit paths, because `git add -A` is how a
+scratch file or a coverage dir ends up in history.
+
+The PR is a **draft from minute one**, and that's the point. A PR opened at the end
+is a wall of diff described from memory; a draft opened as soon as the spec exists
+carries the requirements, the enumerated cases and the falsifiability entries, so a
+reviewer can disagree with the *specification* while it's still cheap. This is the
+one thing the ancestor plugin got for free from its board, and it's back without
+the board.
+
+Kept true is the other half: a description written once is wrong by the third
+commit and nobody rewrites it. `pr-body.sh` regenerates the body from the track on
+every run, between markers:
+
+```
+<!-- sdd-tdd:begin -->   regenerated wholesale, every run
+<!-- sdd-tdd:end -->     everything outside survives untouched
+```
+
+Reviewer notes and screenshots go outside them and persist. And *ready for review*
+is a gate, not a step: every automatable case `refactored` or `covered`, nothing
+`blocked`, and the task at `verify` — `pr-body.sh` prints `ready=yes|no` with its
+reason, and nothing here marks a task `done`.
+
 ## What ships
 
 | Script | Read-only | What it does |
@@ -358,6 +402,8 @@ documented rule.
 | `seam-profile.sh` | yes (sourced, or run to report) | Resolves and validates the seam profile, and owns the `Level` vocabulary both the probe and the manifest builder read. A malformed profile stops here rather than degrading to "this repo has no tests". |
 | `detect-stack.sh` | yes | Which manifests are in this scope, and which starter profile matches. Answers *what is built here* and deliberately not *how it is tested here* — that's what `/sdd-init` reads the repo for. |
 | `init-scaffold.sh` | writes the two per-repo files | Installs a validated seam profile (and the wiki keys, when there's a wiki). Idempotent, refuses to clobber without `--force`, `--list-profiles` shows the starters. |
+| `commit-draft.sh` | yes | Everything a Conventional Commit message derives from: the changed files grouped by scope unit, the evidence for a type, the track's cases in flight. Reads git; stages nothing. |
+| `pr-body.sh` | yes | The PR title, a `ready=yes\|no` verdict, and a body rendered from `spec.md`, `use-cases.json` and the commit list, fenced by markers so a reviewer's own prose survives an update. |
 | `lang-guide.sh` | yes | Where is this repo's language guide? One deterministic answer, so a missing guide is reported rather than silently replaced by generic ecosystem knowledge. |
 
 `_common.sh` and `_confirm.sh` are **sourced, not executed**: the fixed layout,
@@ -402,14 +448,16 @@ driving these from a script of their own.
 ## Tests
 
 ```bash
-bash test/run-tests.sh              # 389 assertions, no network
+bash test/run-tests.sh              # 441 assertions, no network
 bash test/run-tests.sh task wiki    # only matching groups
 ```
 
 Every test runs in a throwaway sandbox pointed at by `CLAUDE_PROJECT_DIR` and
 `SDD_TDD_CONFIG`, so nothing touches the checkout it runs from. The `hygiene`
-group asserts the thing that defines this plugin: no `az`/`curl`/`gh` call
-anywhere, git read in exactly one place, and no git mutation at all. The
+group asserts the thing that defines this plugin: no `az`/`curl` call anywhere,
+git read only in the four scripts declared to read it, and **no script** that
+mutates git or calls `gh` — those commands belong to the two skills, one visible
+command at a time. The
 `task-store` group asserts that a config file **cannot** bend the workflow — the
 whole point of collapsing the configuration is that two projects can't disagree
 about what `specced` means.
@@ -423,9 +471,16 @@ about what `specced` means.
 - **`validate-use-cases.sh` is structural, not semantic.** It checks that cases
   were enumerated, not that they're the *right* cases. Nothing here can tell a
   thorough table from a plausible-looking one.
-- **No git integration.** No branch, no commit, no PR — so the review surface the
-  ancestor got for free (a draft PR carrying the spec from the start) has to come
-  from your own workflow.
+- **The git half stops well short of a workflow.** `/sdd-commit` and `/sdd-pr`
+  commit, push and keep a draft PR current; they don't create branches, merge,
+  rebase, or manage a stack. Standing on `main` with work to push is a stop, not
+  something either skill fixes for you.
+- **`/sdd-pr` needs `gh` and a remote.** Both absent is a stop with a one-line
+  reason. The body generator is offline and works anyway, so `pr-body.sh` is still
+  useful as a description you paste yourself.
+- **A PR body update is a splice, and a hand-rewritten body defeats it.** If the
+  markers are gone, `/sdd-pr` appends rather than overwrites and says so — it will
+  not reconstruct what someone replaced.
 - **One task store file.** Two people running `/sdd-spec` on different tasks at
   the same time will conflict in `tasks.json`. It's one file on purpose — every
   interesting question is a query across all tasks — and that's the price.

@@ -76,6 +76,11 @@ Tell the user where this ends: the task is `specced`, the track has a validated
 `spec.md` and a `use-cases.json`, and **no test has been written**.
 `/sdd-implement <area>` is the next step, and it's a separate decision.
 
+Name `/sdd-pr <area>` too, as the other thing that can happen now rather than
+later: it opens the PR as a **draft** carrying these requirements and cases, which
+is when disagreeing with the specification is still cheap. Also a separate
+decision — offer it, don't run it.
+
 ## Don't outsource the shell
 
 Every script in this plugin works without a TTY: it prints

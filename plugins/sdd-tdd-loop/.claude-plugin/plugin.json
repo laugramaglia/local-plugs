@@ -2,8 +2,8 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "sdd-tdd-loop",
   "displayName": "SDD/TDD Loop",
-  "version": "0.3.0",
-  "description": "One task at a time: spec -> enumerated use cases -> one test per case, red to green to refactored. Language-agnostic: /sdd-init generates this repo's test-seam profile and language skill. Plain-file task store; no board, no PR mechanics.",
+  "version": "0.4.0",
+  "description": "One task at a time: spec -> enumerated use cases -> one test per case, red to green to refactored. Language-agnostic: /sdd-init generates this repo's test-seam profile and language skill. /sdd-commit and /sdd-pr draft a Conventional Commit and keep a draft PR true to the track. Plain-file task store; no board, no poller.",
   "author": {
     "name": "Lau"
   },
@@ -15,7 +15,9 @@
     "use-cases",
     "tasks",
     "workflow",
-    "language-agnostic"
+    "language-agnostic",
+    "conventional-commits",
+    "pull-request"
   ],
   "userConfig": {
     "wiki_root": {

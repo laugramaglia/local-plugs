@@ -1293,6 +1293,142 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
     "$(cat "$PLUGIN_DIR/templates/lang-skill.template.md")" "One section per seam name"
 fi
 
+group commit-draft
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # These two scripts are the only ones that touch git for a reason other than
+  # validate-spec.sh's baseline, so what's asserted here is mostly what they
+  # REFUSE to do: decide a type, stage anything, or answer a question the diff
+  # can't answer.
+  new_sandbox
+  out=$(run bash "$SCRIPTS/commit-draft.sh"); rc=$?
+  assert_status "outside a git repo it stops rather than drafting" "$rc" 1
+  assert_contains "and says why"                                   "$out" "not a git repository"
+
+  new_sandbox
+  git -C "$SB" init -q . 2>/dev/null
+  git -C "$SB" config user.email t@t; git -C "$SB" config user.name T
+  out=$(run bash "$SCRIPTS/commit-draft.sh")
+  assert_contains "a clean tree is not an error" "$out" "NOTHING TO COMMIT"
+
+  mkdir -p "$SB/plugins/one/scripts" "$SB/plugins/two"
+  printf 'echo hi\n' > "$SB/plugins/one/scripts/a.sh"
+  printf '# two\n' > "$SB/plugins/two/README.md"
+  out=$(run bash "$SCRIPTS/commit-draft.sh")
+  assert_contains "untracked work is drafted from"     "$out" "drafting-from=worktree+untracked"
+  assert_contains "files are grouped by scope unit"    "$out" "group=plugins/one"
+  assert_contains "and the scope candidates named"     "$out" "scope=one"
+  assert_contains "two groups means propose a split"   "$out" "SPLIT:"
+  assert_contains "untracked files are a question"     "$out" "in this commit, or not yet"
+  # The two lines this script exists to NOT cross: it never decides the type, and
+  # it never touches the index. The second is asserted against git, not against
+  # the output — the draft legitimately PRINTS `git add` as advice.
+  assert_contains "it never picks the type itself" "$out" "the diff can't tell these apart"
+  before=$(git -C "$SB" status --porcelain)
+  run bash "$SCRIPTS/commit-draft.sh" >/dev/null
+  assert_eq "and drafting leaves the tree exactly as it was" "$(git -C "$SB" status --porcelain)" "$before"
+
+  # Staged work wins: a partly staged tree is a deliberate act, and drafting from
+  # everything would describe a commit the human isn't making.
+  git -C "$SB" add plugins/two/README.md 2>/dev/null
+  out=$(run bash "$SCRIPTS/commit-draft.sh")
+  assert_contains "staged work is what gets drafted" "$out" "drafting-from=staged"
+  assert_contains "only docs changed, so type=docs"  "$out" "type=docs is the honest one"
+  assert_not_contains "and the unstaged group is out of scope" "$out" "group=plugins/one"
+
+  # With a track, the draft can name the case in flight and its Assert — the one
+  # sentence a subject line should be derived from.
+  new_sandbox
+  git -C "$SB" init -q . 2>/dev/null
+  git -C "$SB" config user.email t@t; git -C "$SB" config user.name T
+  write_good_spec loans
+  run bash "$SCRIPTS/build-use-cases-manifest.sh" loans >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-1.1 red >/dev/null
+  out=$(run bash "$SCRIPTS/commit-draft.sh" loans)
+  assert_contains "the track is reported"            "$out" "track=tracks/loans"
+  assert_contains "with its case counts"             "$out" "cases=3"
+  assert_contains "and the case in flight by id"     "$out" "RF-1.1"
+  assert_contains "carrying its Assert text"         "$out" "amountRect.bottom <= viewport.bottom"
+
+  out=$(run bash "$SCRIPTS/commit-draft.sh" nosuch); rc=$?
+  assert_status "a bad area stops" "$rc" 1
+fi
+
+group pr-body
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  new_sandbox
+  git -C "$SB" init -q . 2>/dev/null
+  git -C "$SB" config user.email t@t; git -C "$SB" config user.name T
+  write_good_spec loans
+  mkdir -p "$SB/.sdd-tdd"
+  printf '{"version":1,"nextId":2,"tasks":[{"id":1,"title":"keyboard overlap","state":"implementing","area":"loans"}]}\n' > "$SB/.sdd-tdd/tasks.json"
+  run bash "$SCRIPTS/build-use-cases-manifest.sh" loans >/dev/null
+
+  out=$(run bash "$SCRIPTS/pr-body.sh" loans)
+  assert_contains "the title comes from the spec's H1" "$out" "the amount stays visible"
+  assert_contains "and leaves the type to the human"   "$out" "title=<type>(loans)"
+  assert_contains "the task is named"                  "$out" "#1 keyboard overlap — implementing"
+  assert_contains "requirements are quoted verbatim"   "$out" "RF-1 — the amount stays visible with the keyboard open"
+  assert_contains "the evidence table is there"        "$out" "| Case | Level | Mode | Status | Assert |"
+  assert_contains "manual cases become review boxes"   "$out" "- [ ] **RF-1.2**"
+  assert_contains "gaps ride along"                    "$out" "H-1"
+  assert_contains "the generated region is fenced"     "$out" "<!-- sdd-tdd:begin"
+  assert_contains "and closed"                         "$out" "<!-- sdd-tdd:end -->"
+  # The gate: nothing is refactored yet, so this PR is not reviewable.
+  assert_contains "a track mid-flight is not ready" "$out" "ready=no"
+
+  # Ready is every automatable case refactored AND the task at verify. Both
+  # halves matter: green tests are not a finished feature.
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-1.1 red >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-1.1 green >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-1.1 refactored >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-2.1 red >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-2.1 green >/dev/null
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-2.1 refactored >/dev/null
+  out=$(run bash "$SCRIPTS/pr-body.sh" loans)
+  assert_contains "cases done but task not at verify is still not ready" "$out" "not verify"
+
+  jq '.tasks[0].state = "verify"' "$SB/.sdd-tdd/tasks.json" > "$SB/.sdd-tdd/t.json" && mv "$SB/.sdd-tdd/t.json" "$SB/.sdd-tdd/tasks.json"
+  out=$(run bash "$SCRIPTS/pr-body.sh" loans)
+  assert_contains "refactored plus verify is ready" "$out" "ready=yes"
+
+  # A blocked case outranks everything: a human is needed before review.
+  run bash "$SCRIPTS/mark-usecase-status.sh" loans RF-2.1 blocked --reason spec-wrong >/dev/null
+  out=$(run bash "$SCRIPTS/pr-body.sh" loans)
+  assert_contains "a blocked case is never ready" "$out" "blocked case(s)"
+  assert_contains "and it says why in the body"    "$out" "spec-wrong"
+
+  out=$(run bash "$SCRIPTS/pr-body.sh" nosuch); rc=$?
+  assert_status "a bad area stops" "$rc" 1
+fi
+
+group commit-pr-contract
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The mutating half lives in the skills, so the contract is what they promise.
+  C="$PLUGIN_DIR/skills/sdd-commit/SKILL.md"
+  P="$PLUGIN_DIR/skills/sdd-pr/SKILL.md"
+
+  assert_contains "the commit skill drafts before it asks" "$(cat "$C")" "Draft first, ask second, commit third"
+  assert_contains "it uses the draft script"               "$(cat "$C")" "commit-draft.sh"
+  assert_contains "it stages named paths, never -A"        "$(cat "$C")" "never -A"
+  assert_contains "it refuses --no-verify"                 "$(cat "$C")" "don't"
+  assert_contains "and never amends a pushed commit"       "$(cat "$C")" "Never amend a commit that is already pushed"
+  assert_contains "it keeps the PR current afterwards"     "$(cat "$C")" "pr-body.sh"
+  assert_contains "conventional commit shape is spelled out" "$(cat "$C")" "BREAKING CHANGE"
+
+  assert_contains "the PR opens as a draft"          "$(cat "$P")" "gh pr create --draft"
+  assert_contains "the body is generated"            "$(cat "$P")" "pr-body.sh"
+  assert_contains "human prose outside the markers survives" "$(cat "$P")" "sdd-tdd:begin"
+  assert_contains "ready is gated on the track"      "$(cat "$P")" "ready=yes"
+  assert_contains "it never merges"                  "$(cat "$P")" "**Merge.**"
+  assert_contains "and never rewrites history"       "$(cat "$P")" "no force-push"
+  assert_contains "a missing remote is a stop"       "$(cat "$P")" "No remote"
+
+  # Neither skill may quietly become a task-state transition or a done gate:
+  # that's what made the ancestor plugin's PR mechanics untrustworthy.
+  assert_contains "the commit skill moves no task state" "$(cat "$C")" "Move a task's state"
+  assert_contains "the PR skill sets nothing done"       "$(cat "$P")" "nothing here marks a task \`done\`"
+fi
+
 group wiki-config
 if [ "$SKIP_GROUP" -eq 0 ]; then
   # No config and no business-docs/: a project with no wiki. Silent, not degraded.
@@ -1435,16 +1571,32 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   # that's the whole difference from the plugin it descends from. Asserted here
   # rather than trusted, because one `az` call would reintroduce the dependency
   # silently and only fail on a machine without it.
-  hits=$(grep -lE '(^|[^a-zA-Z_])(az|curl|wget|gh) ' "$SCRIPTS"/*.sh 2>/dev/null || true)
+  hits=$(grep -nE '(^|[^a-zA-Z_])(az|curl|wget) ' "$SCRIPTS"/*.sh 2>/dev/null \
+    | grep -vE ':[[:space:]]*#' | grep -vE 'echo "' || true)
   if [ -z "$hits" ]; then ok "no board/network CLI is invoked"; else bad "no board/network CLI is invoked" "$hits"; fi
 
-  # git is read in exactly one place, and even there it's optional.
+  # git is READ in four named places and written in none.
   # `(^|space)git space` and not `.git ` — probe-test-seams.sh legitimately
   # passes --exclude-dir=.git, which a naive 'git ' match reads as a git call.
-  hits=$(grep -lE '(^|[[:space:]])git[[:space:]]' "$SCRIPTS"/*.sh | grep -v 'validate-spec.sh' | grep -v '_common.sh' || true)
-  if [ -z "$hits" ]; then ok "git is touched only by validate-spec.sh's baseline"; else bad "git is touched only by validate-spec.sh's baseline" "$hits"; fi
-  hits=$(grep -nE 'git (commit|push|checkout|branch|add|merge|tag)' "$SCRIPTS"/*.sh || true)
-  if [ -z "$hits" ]; then ok "no git mutation anywhere"; else bad "no git mutation anywhere" "$hits"; fi
+  hits=$(grep -lE '(^|[[:space:]])git[[:space:]]' "$SCRIPTS"/*.sh \
+    | grep -vE '(validate-spec|_common|commit-draft|pr-body)\.sh' || true)
+  if [ -z "$hits" ]; then ok "git is read only where it's declared to be"; else bad "git is read only where it's declared to be" "$hits"; fi
+
+  # The invariant that survived /sdd-commit and /sdd-pr: no SCRIPT mutates git or
+  # calls gh. Those two skills do both — in the conversation, one command at a
+  # time, where a human sees `git add <paths>` before it runs. A script that
+  # staged and committed on its own would be the one part of this plugin whose
+  # effect nobody reviews. The message-drafting and body-rendering halves are
+  # scripts precisely because they only read.
+  #
+  # `git add`/`git commit`/`git push` appear in these scripts' PROSE (the commands
+  # they tell the caller to run), so comment and echo lines are excluded — what's
+  # banned is executing one.
+  hits=$(grep -nE '(^|[^#[:alnum:]])git (commit|push|checkout|switch|branch|add|merge|rebase|tag|reset|restore)' "$SCRIPTS"/*.sh \
+    | grep -vE ':[[:space:]]*#' | grep -vE 'echo "' || true)
+  if [ -z "$hits" ]; then ok "no script mutates git"; else bad "no script mutates git" "$hits"; fi
+  hits=$(grep -nE '(^|[^a-zA-Z_])gh ' "$SCRIPTS"/*.sh | grep -vE ':[[:space:]]*#' | grep -vE 'echo "' || true)
+  if [ -z "$hits" ]; then ok "no script calls gh"; else bad "no script calls gh" "$hits"; fi
 
   for f in "$SCRIPTS"/*.sh; do
     head -1 "$f" | grep -q '^#!/usr/bin/env bash' || bad "shebang in $(basename "$f")" ""
@@ -1458,7 +1610,7 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   if [ -z "$hits" ]; then ok "only _common.sh derives REPO_ROOT"; else bad "only _common.sh derives REPO_ROOT" "$hits"; fi
 
   # Every skill this plugin ships must be reachable and have frontmatter.
-  for s in sdd-task sdd-spec sdd-implement sdd-status sdd-init; do
+  for s in sdd-task sdd-spec sdd-implement sdd-status sdd-init sdd-commit sdd-pr; do
     f="$PLUGIN_DIR/skills/$s/SKILL.md"
     if [ -f "$f" ] && head -1 "$f" | grep -q '^---$' && grep -q "^name: $s$" "$f"; then
       ok "skill $s is well-formed"

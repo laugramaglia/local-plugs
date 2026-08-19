@@ -211,6 +211,11 @@ delta. Adding a feature module is not a step in this loop.
   that's wrong.
 - `$SDD/mark-usecase-status.sh <area> <case-id> refactored`
 
+A finished case is the natural commit boundary — one case, one commit, with the
+red-then-green observation in the body. `/sdd-commit <area>` drafts it and, when
+the branch already has a draft PR, refreshes the PR from the track. Offer it;
+committing is the user's call, and this loop never commits on its own.
+
 Then back to phase 1.
 
 ### Phase 6: Record progress, then stop at the human gate
