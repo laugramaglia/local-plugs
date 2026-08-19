@@ -132,6 +132,21 @@ is_date() {
 	printf '%s' "$1" | grep -q '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'
 }
 
+# A scratch file so the code_refs loop reads from a redirect rather than a pipe:
+# in a pipeline the loop body runs in a subshell, where err()/wrn() increment a
+# copy of the counters and every finding is lost on the way out.
+REFS_TMP="${TMPDIR:-/tmp}/check-wiki.refs.$$"
+trap 'rm -f "$REFS_TMP"' EXIT INT TERM
+
+# The staleness check is a nice-to-have: outside a git repo it must vanish
+# silently rather than reporting every page as fresh, and it stays out of hook
+# mode entirely so a keystroke-time check never waits on `git log`.
+GIT_OK=no
+if [ "$HOOK_MODE" = no ] && command -v git >/dev/null 2>&1 &&
+	git rev-parse --git-dir >/dev/null 2>&1; then
+	GIT_OK=yes
+fi
+
 # ------------------------------------------------------------------- per file
 
 for f in $TARGETS; do
@@ -219,17 +234,61 @@ for f in $TARGETS; do
 		;;
 	esac
 
-	# ------ code_refs must still exist
-	list_items "$fm" code_refs | while read -r ref; do
+	# ------ code_refs must still resolve
+	#
+	# The citations ARE the authority model: a page is only trustworthy because it
+	# points at the code it describes. So a ref is checked as a citation, not as a
+	# path — `lib/quiz/score.dart:88` in a file that is 40 lines long is dead, and
+	# a plain existence check calls it fine.
+	page_date=$(value_of "$fm" updated)
+	[ -n "$page_date" ] || page_date=$(value_of "$fm" date)
+	refs_line=$(line_of "$f" '^code_refs:')
+
+	list_items "$fm" code_refs > "$REFS_TMP"
+	while IFS= read -r ref; do
 		[ -n "$ref" ] || continue
-		[ -e "$ref" ] || printf 'ERROR %s:%s code_refs path does not exist: %s\n' \
-			"$f" "$(line_of "$f" '^code_refs:')" "$ref" >&2
-	done
-	bad_refs=$(list_items "$fm" code_refs | while read -r ref; do
-		[ -n "$ref" ] || continue
-		[ -e "$ref" ] || echo x
-	done | wc -l | tr -d ' ')
-	fails=$((fails + bad_refs))
+
+		# path:line — only a trailing all-digits segment counts, so a Windows-ish
+		# or colon-bearing path isn't mistaken for a line number.
+		ref_path=$ref
+		ref_line=""
+		case $ref in
+		*:*)
+			maybe=${ref##*:}
+			if printf '%s' "$maybe" | grep -q '^[0-9][0-9]*$'; then
+				ref_path=${ref%:*}
+				ref_line=$maybe
+			fi
+			;;
+		esac
+
+		if [ ! -e "$ref_path" ]; then
+			err "$f:$refs_line code_refs path does not exist: $ref_path"
+			continue
+		fi
+
+		if [ -n "$ref_line" ]; then
+			if [ ! -f "$ref_path" ]; then
+				err "$f:$refs_line code_refs cites line $ref_line of $ref_path, which is not a file"
+				continue
+			fi
+			n_lines=$(wc -l < "$ref_path" | tr -d ' ')
+			if [ "$ref_line" -gt "${n_lines:-0}" ]; then
+				err "$f:$refs_line code_refs cites $ref_path:$ref_line but that file has $n_lines line(s)"
+				continue
+			fi
+		fi
+
+		# The code moved after the page said it was current. Not wrong on its own,
+		# but it is where wrongness accumulates — source-drift-watcher's comparison
+		# 6, made cheap enough to run on every check.
+		if [ "$GIT_OK" = yes ] && is_date "$page_date"; then
+			last=$(git log -1 --format=%cd --date=short -- "$ref_path" 2>/dev/null)
+			if is_date "$last" && [ "$last" \> "$page_date" ]; then
+				wrn "$f:$refs_line $ref_path changed on $last, after this page's updated: $page_date"
+			fi
+		fi
+	done < "$REFS_TMP"
 
 	# ------ [[links]] must resolve
 	for lnk in $(grep -o '\[\[[^]]*\]\]' "$f" 2>/dev/null | sed 's/^\[\[//; s/\]\]$//' | sort -u); do
