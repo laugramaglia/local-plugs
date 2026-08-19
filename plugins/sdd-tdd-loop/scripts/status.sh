@@ -19,14 +19,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
 require_tools jq || exit 1
-require_config || exit 1
 
 STORE="$(tasks_path)"
 TRACKS_DIR_REL="$(tracks_dir_rel)"
 only_id="${1#\#}"
 
 echo "# sdd-tdd status"
-echo "states:  $(states_list | paste -sd' -> ' -)"
+echo "states:  $(states_arrow)"
 echo "tasks:   $(tasks_path_rel)"
 echo "tracks:  $TRACKS_DIR_REL/"
 echo
@@ -78,10 +77,25 @@ while IFS= read -r id; do
   elif ! jq -e . "$dir/use-cases.json" >/dev/null 2>&1; then
     echo "   cases: use-cases.json is not valid JSON"
   else
+    # `blocked` and `covered` each get their own line. A single "blocked=39" is
+    # the exact number that made this report useless: it covered "waiting on a
+    # human" and "already done, no legal state to say so" with one word. The
+    # reason keys come from mark-usecase-status.sh; a manifest written before
+    # they existed shows `unspecified` rather than failing to render.
     jq -r '
       (.cases | group_by(.status) | map("\(.[0].status)=\(length)") | join("  ")) as $by
       | "   cases: \(.summary.total) total (\(.summary.automatable) automatable, \(.summary.manual) manual)"
       , "          \($by)"
+      , (([.cases[] | select(.status == "blocked")] | length) as $b
+         | if $b > 0 then
+             "          blocked: " + ([.cases[] | select(.status == "blocked")
+               | (.blocked_reason.key // "unspecified")]
+               | group_by(.) | map("\(.[0])=\(length)") | join("  "))
+           else empty end)
+      , (([.cases[] | select(.status == "covered")] | length) as $c
+         | if $c > 0 then
+             "          covered: \($c) row(s) satisfied by another case'"'"'s test"
+           else empty end)
       , "          automatable pending: \([.cases[] | select(.automatable and .status == "pending")] | length)"' \
       "$dir/use-cases.json"
   fi

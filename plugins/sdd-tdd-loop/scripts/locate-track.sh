@@ -26,14 +26,18 @@ if [ "$#" -eq 0 ]; then
 fi
 
 if [ ! -d "$TRACKS_DIR" ]; then
-  echo "STOP HERE: $TRACKS_DIR doesn't exist (tracksDir from $CONFIG)."
-  exit 1
+  echo "NO MATCH — $TRACKS_DIR_REL/ doesn't exist yet, so no track can match."
+  echo "scaffold-track.sh creates it on the first track."
+  exit 3
 fi
 
 pattern=$(printf '%s\n' "$@" | paste -sd'|' -)
 matched_names=()
 
 for dir in "$TRACKS_DIR"/*/; do
+  # An empty tracks/ leaves the glob unexpanded, and printing a literal '*' as a
+  # folder name reads like a real track called '*'.
+  [ -d "$dir" ] || continue
   name=$(basename "$dir")
   if [[ "$name" == _* ]]; then
     continue
@@ -54,11 +58,15 @@ done
 if [ "${#matched_names[@]}" -eq 0 ]; then
   echo "NO MATCH — no existing track matches: $*"
   echo "Current folders in $TRACKS_DIR_REL/:"
+  found=0
   for dir in "$TRACKS_DIR"/*/; do
+    [ -d "$dir" ] || continue
     name=$(basename "$dir")
     [[ "$name" == _* ]] && continue
     echo "  - $name"
+    found=1
   done
+  [ "$found" -eq 0 ] && echo "  (none yet)"
   exit 3
 fi
 

@@ -111,6 +111,19 @@ what the loop actually consumes — so the 7 columns are a contract, not a style
   not "amount below minimum").
 - **Assert** — something an assertion can be written from.
 
+## Falsifiability
+
+(One row per \`red-first\` case above — \`validate-use-cases.sh\` FAILs without
+them. A red-first row promises its test fails BEFORE the change; nothing in the
+table above can prove that, so state what the code does TODAY and why the
+assertion contradicts it. A row you can't fill in is a row whose test may not be
+able to fail — which makes it a \`characterization\` case, or a wrong
+requirement.)
+
+| # | Currently observed | Why the assert fails today |
+| --- | --- | --- |
+| RF-1.1 | <the value/behaviour there right now> | <what the assert demands instead> |
+
 ## Acceptance criteria
 
 ## Out of scope

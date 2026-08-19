@@ -86,6 +86,62 @@ else
     else
       echo "$manifest_json" | jq -r '
         "OK: \(.summary.total) use cases machine-readable (\(.summary.automatable) automatable, \(.summary.manual) manual)."'
+
+      # The builder's assertion-shape warnings ride inside the manifest, so they
+      # surface here without a second parser.
+      warn_rows=$(echo "$manifest_json" | jq -r '.warnings // [] | .[]')
+      if [ -n "$warn_rows" ]; then
+        echo "WARNING: suspicious assertion shape:"
+        printf '%s\n' "$warn_rows" | sed 's/^/  /'
+      fi
+
+      # --------------------------------------------------- falsifiability gate
+      #
+      # A red-first case promises the test fails BEFORE the change. Nothing in a
+      # markdown table can prove that, and the failure is invisible until the
+      # implement loop hits it: a spec once asserted a Spanish string for a key
+      # whose value is "Quiz" in every locale, so the assertion could not fail and
+      # proved nothing — three rows into the loop, not at intake.
+      #
+      # So each red-first row must also state the value observed TODAY. Presence
+      # is machine-checked here; the content is the human's, and writing it down
+      # is what makes "identical in both ARB files" visible next to an assertion
+      # expecting them to differ. Characterization rows are exempt (they are
+      # supposed to pass already) and so are manual ones.
+      red_ids=$(echo "$manifest_json" | jq -r '.cases[] | select(.mode == "red-first") | .id' | sort -u)
+      if [ -n "$red_ids" ]; then
+        # Same section slice as '## Use cases': from the heading to the next
+        # SAME-LEVEL heading, so a '### RF-N' subheading can't end it early.
+        fals_section=$(awk '
+          /^## +[Ff]alsifiability/ {flag=1; next}
+          /^## / {if (flag) exit}
+          flag
+        ' "$spec")
+        if [ -z "$fals_section" ]; then
+          echo "FAIL: $(echo "$red_ids" | grep -c .) red-first case(s) but no '## Falsifiability' section."
+          echo "      One row per red-first case: | # | Currently observed | Why the assert fails today |"
+          echo "      A row you can't fill in is a row whose test may not be able to fail."
+          ok=0
+        else
+          fals_ids=$(printf '%s\n' "$fals_section" \
+            | grep -oE '^\|[[:space:]]*RF-[0-9]+\.[0-9]+' \
+            | grep -oE 'RF-[0-9]+\.[0-9]+' | sort -u)
+          missing=$(comm -23 <(echo "$red_ids") <(echo "$fals_ids"))
+          if [ -n "$missing" ]; then
+            echo "FAIL: red-first case(s) with no '## Falsifiability' row:"
+            echo "$missing" | sed 's/^/  - /'
+            echo "      Say what the code does TODAY and why the assertion fails against it."
+            ok=0
+          else
+            echo "OK: every red-first case states what it observes today."
+          fi
+          # A row for a case that is no longer red-first is stale, not fatal.
+          stale=$(comm -13 <(echo "$red_ids") <(echo "$fals_ids"))
+          if [ -n "$stale" ]; then
+            echo "WARNING: Falsifiability row(s) for cases that aren't red-first: $(echo "$stale" | tr '\n' ' ')"
+          fi
+        fi
+      fi
       # An RF whose every case is manual is a requirement the TDD loop cannot
       # touch. Not an error — some behavior genuinely only a human can check —
       # but the human needs to know at intake, not at implementation.

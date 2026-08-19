@@ -58,12 +58,14 @@ Report the id it prints. That id is how every later command refers to the task.
 ## The other subcommands
 
 - `list` — no argument lists everything with a by-state tally; `list <state>`
-  filters. A state the project never declared is an error, not an empty list.
+  filters. A state that isn't in the workflow is an error, not an empty list.
 - `show <id>` — title, state, area, description and every note.
-- `state <id> <state>` — moves it. `@spec` and `@implement` resolve through the
-  config's `advanceTo`, which is what the two loop skills pass; a human naming a
-  state directly is fine too. Backwards needs `--force`, and you should say why
-  you're using it.
+- `state <id> <state>` — moves it through the fixed workflow
+  `new → specced → implementing → verify → done`, plus `blocked` from and back to
+  anywhere. `/sdd-spec` sets `specced`; `/sdd-implement` sets `implementing` then
+  `verify`. **`done` is yours to set** — nothing in this plugin sets it, because
+  green tests are not a finished feature. Backwards needs `--force`, and you
+  should say why you're using it.
 - `note <id>` — append a dated note. This is the channel for anything a human
   needs to read later: cross-check findings, why a run stopped, what a blocked
   case is waiting on. Write the text to a scratch file and pass the path.

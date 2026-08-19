@@ -6,7 +6,7 @@
 #                       [--area <slug>] [--state <key>]
 #   task.sh list [--state <key>] [--json]
 #   task.sh show <id> [--json]
-#   task.sh state <id> <state-key|@spec|@implement> [--force]
+#   task.sh state <id> <state> [--force]
 #   task.sh area  <id> <area-slug>
 #   task.sh note  <id> <file|-> [--title <heading>]
 #   task.sh next  [--state <key>]
@@ -20,9 +20,10 @@
 # and nothing stops it moving a task backwards or into a state the project never
 # declared. The transition rule below is the whole reason this file exists.
 #
-# Transitions are forward-only along `states` in the config, plus `blocked` as an
-# escape hatch from and back to anywhere. A backwards move needs --force and says
-# so — reopening work is a real thing, but it should be a decision, not a typo.
+# Transitions are forward-only along the fixed workflow (see _common.sh), plus
+# `blocked` as an escape hatch from and back to anywhere. A backwards move needs
+# --force — reopening work is a real thing, but it should be a decision, not a
+# typo.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +31,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/_common.sh"
 
 require_tools jq || exit 1
-require_config || exit 1
 
 STORE="$(tasks_path)"
 STORE_REL="$(tasks_path_rel)"
@@ -44,8 +44,11 @@ usage() {
 ensure_store() {
   if [ -f "$STORE" ]; then
     if ! jq -e . "$STORE" >/dev/null 2>&1; then
-      echo "STOP HERE: $STORE_REL is not valid JSON. Fix or delete it; nothing else in"
-      echo "this plugin will touch it while it can't be read."
+      # stderr, because every caller redirects ensure_store's chatter to
+      # /dev/null to suppress the "created" notice — and a corrupt store must
+      # never be one of the things that suppresses.
+      echo "STOP HERE: $STORE_REL is not valid JSON. Fix or delete it; nothing else in" >&2
+      echo "this plugin will touch it while it can't be read." >&2
       return 1
     fi
     return 0
@@ -135,7 +138,7 @@ cmd_new() {
 
   [ -z "$state" ] && state="$(first_state)"
   if ! state_exists "$state"; then
-    echo "STOP HERE: '$state' is not one of this project's states: $(states_list | paste -sd' ' -)"
+    echo "STOP HERE: '$state' is not a state. The workflow is: $(states_arrow)"
     return 1
   fi
   if [ -n "$area" ] && ! [[ "$area" =~ ^[a-z][a-z0-9-]*$ ]]; then
@@ -183,7 +186,7 @@ cmd_list() {
   if [ -n "$want_state" ] && ! state_exists "$want_state"; then
     # A filter on a state the project never declared returns zero tasks, which
     # is indistinguishable from "nothing to do". Fail loud instead.
-    echo "STOP HERE: '$want_state' is not one of this project's states: $(states_list | paste -sd' ' -)"
+    echo "STOP HERE: '$want_state' is not a state. The workflow is: $(states_arrow)"
     return 1
   fi
 
@@ -223,37 +226,28 @@ cmd_show() {
 }
 
 cmd_state() {
-  local id target force=0
+  local id target force=0 waive=0 waive_reason="" record_waiver=0
   id="$(norm_id "${1:-}")"
   target="${2:-}"
-  [ "${3:-}" = "--force" ] && force=1
+  shift 2 2>/dev/null || true
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --force)          force=1; shift ;;
+      --no-wiki-delta)  waive=1; waive_reason="${2:-}"; shift 2 2>/dev/null || shift ;;
+      *) echo "Unknown option '$1'."; return 2 ;;
+    esac
+  done
 
   if [ -z "$id" ] || [ -z "$target" ]; then
-    echo "Usage: task.sh state <id> <state-key|@spec|@implement> [--force]"
+    echo "Usage: task.sh state <id> <state> [--force] [--no-wiki-delta \"<reason>\"]"
     return 2
   fi
   ensure_store >/dev/null || return 1
   require_task "$id" || return 1
 
-  # @phase resolves through advanceTo in the config, so which state a phase ends
-  # in stays configuration rather than a literal baked into a SKILL.md.
-  local phase=""
-  case "$target" in
-    @*)
-      phase="${target#@}"
-      target="$(advance_target "$phase")"
-      if [ -z "$target" ]; then
-        echo "STOP HERE: can't resolve '@$phase' — no advanceTo.$phase in $CONFIG"
-        echo "and no built-in default for that phase. Declare it:"
-        echo "  \"advanceTo\": { \"$phase\": \"<state-key>\" }"
-        return 1
-      fi
-      ;;
-  esac
-
   if ! state_exists "$target"; then
-    echo "STOP HERE: '$target'${phase:+ (from advanceTo.$phase)} is not one of this"
-    echo "project's states: $(states_list | paste -sd' ' -)"
+    echo "STOP HERE: '$target' is not a state. The workflow is:"
+    echo "  $(states_arrow)"
     return 1
   fi
 
@@ -274,13 +268,61 @@ cmd_state() {
 
   if [ "$legal" -ne 1 ] && [ "$force" -ne 1 ]; then
     echo "STOP HERE: '$current' -> '$target' moves #$id backwards through"
-    echo "  $(states_list | paste -sd' -> ' -)"
+    echo "  $(states_arrow)"
     echo "Reopening work is legitimate, but it should be deliberate: re-run with"
     echo "--force if that's what you mean."
     return 1
   fi
 
-  echo "About to move task #$id: $current -> $target${phase:+  (@$phase)}"
+  # ------------------------------------------------------ the wiki delta gate
+  #
+  # Reaching the terminal state on a project WITH a business wiki, having changed
+  # nothing in it, is the seam these two plugins used to leave open: the closeout
+  # was mandatory only because CLAUDE.md said so, and nothing structural noticed
+  # when it was skipped. Only the last state is gated, and only when a wiki is
+  # actually configured — `mode=off` is a supported project shape and must stay
+  # completely silent here.
+  if [ "$target" = "$(last_state)" ]; then
+    local wiki_mode="" wiki_path="" wiki_conf=""
+    if wiki_conf=$(bash "$SCRIPT_DIR/wiki-config.sh" 2>/dev/null); then
+      wiki_mode=$(printf '%s\n' "$wiki_conf" | sed -n 's/^mode=//p')
+      wiki_path=$(printf '%s\n' "$wiki_conf" | sed -n 's/^wiki=//p')
+    else
+      # wikiRequired with no wiki. That's a hard stop for the whole workflow, so
+      # it certainly isn't a task you can call finished.
+      echo "STOP HERE: the wiki configuration is broken, so '$target' can't be verified:"
+      bash "$SCRIPT_DIR/wiki-config.sh" 2>&1 | sed -n 's/^STOP HERE: /  /p'
+      return 1
+    fi
+
+    if [ -n "$wiki_mode" ] && [ "$wiki_mode" != "off" ]; then
+      local has_delta
+      has_delta=$(task_json "$id" | jq -r '[.notes[]? | select(.title == "wiki-delta")] | length')
+      if [ "${has_delta:-0}" -eq 0 ] && [ "$waive" -eq 0 ]; then
+        echo "STOP HERE: #$id has no 'wiki-delta' note and this project has a wiki ($wiki_path)."
+        echo "Work that changed business behaviour and left the wiki untouched is work"
+        echo "the next spec will contradict. Register it:"
+        echo "  /business-wiki:harvest"
+        echo "Or say outright that there was nothing to register:"
+        echo "  task.sh state $id $target --no-wiki-delta \"<why nothing changed>\""
+        return 1
+      fi
+      if [ "$has_delta" -eq 0 ] && [ "$waive" -eq 1 ] && [ -z "$waive_reason" ]; then
+        echo "STOP HERE: --no-wiki-delta needs a reason."
+        echo "An unexplained waiver records that the gate was skipped while saying"
+        echo "nothing about why — worse than no gate."
+        return 1
+      fi
+      # The waiver is recorded after the move lands, not here: a cancelled
+      # confirmation must not leave a reason behind on a task that never advanced.
+      [ "$has_delta" -eq 0 ] && [ "$waive" -eq 1 ] && record_waiver=1
+    fi
+  elif [ "$waive" -eq 1 ]; then
+    echo "STOP HERE: --no-wiki-delta only applies to '$(last_state)', not '$target'."
+    return 1
+  fi
+
+  echo "About to move task #$id: $current -> $target"
   # shellcheck source=_confirm.sh
   source "$SCRIPT_DIR/_confirm.sh"
   if ! confirm_or_yes "move #$id to '$target'"; then
@@ -290,9 +332,18 @@ cmd_state() {
 
   local updated
   updated=$(jq --argjson id "$id" --arg st "$target" --arg now "$(now_utc)" \
-    '(.tasks[] | select(.id == $id)) |= (.state = $st | .updatedAt = $now)' "$STORE") || return 1
+    --argjson waive "$record_waiver" --arg wt "$waive_reason" \
+    '(.tasks[] | select(.id == $id)) |= (
+       .state = $st
+       | .updatedAt = $now
+       | if $waive == 1
+         then .notes += [{at: $now, title: "wiki-delta waived", text: $wt}]
+         else . end
+     )' "$STORE") || return 1
   write_store "$updated" || return 1
   echo "#$id: $current -> $target"
+  [ "$record_waiver" -eq 1 ] && echo "  wiki delta waived: $waive_reason"
+  return 0
 }
 
 cmd_area() {
@@ -361,7 +412,7 @@ cmd_next() {
   [ "${1:-}" = "--state" ] && want_state="${2:-}"
   [ -z "$want_state" ] && want_state="$(first_state)"
   if ! state_exists "$want_state"; then
-    echo "STOP HERE: '$want_state' is not one of this project's states: $(states_list | paste -sd' ' -)"
+    echo "STOP HERE: '$want_state' is not a state. The workflow is: $(states_arrow)"
     return 1
   fi
   if [ ! -f "$STORE" ]; then
