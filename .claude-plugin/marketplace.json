@@ -23,8 +23,8 @@
       "name": "sdd-tdd-loop",
       "source": "./plugins/sdd-tdd-loop",
       "displayName": "SDD/TDD Loop",
-      "description": "Local task -> spec -> enumerated use cases -> red/green/refactor, one test per use case. Language-agnostic: /sdd-init writes this repo's test-seam profile and language skill. Plain-file task store; no board, no PR mechanics.",
-      "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow", "language-agnostic"],
+      "description": "Local task -> spec -> enumerated use cases -> red/green/refactor, one test per use case. Language-agnostic: /sdd-init writes this repo's test-seam profile and language skill. /sdd-commit and /sdd-pr draft a Conventional Commit and keep a draft PR true to the track.",
+      "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow", "language-agnostic", "conventional-commits", "pull-request"],
       "category": "workflow",
       "license": "MIT"
     }
