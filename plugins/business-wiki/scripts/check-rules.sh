@@ -71,6 +71,29 @@ for f in "$RULES_ROOT"/*.json; do
 		grep -q "\"$k\"" "$f" || err "$f missing required key '$k'"
 	done
 
+	# Provenance. A keeper-generated file and one a model wrote by hand are
+	# byte-indistinguishable, and everything downstream trusts both equally — so
+	# the derive stamps which it was, and a hand-derive stays visible until a real
+	# one replaces it. Warnings, not errors: a repo derived before the stamp
+	# existed must still validate. `strict_check=true` makes them fatal.
+	prov=$(json_strings "$f" derived_by | head -1)
+	case "$prov" in
+	business-rules-keeper) ;;
+	hand)
+		wrn "$f is hand-derived (derived_by: hand) — idempotence is unproven; re-run /business-wiki:derive with the keeper available"
+		;;
+	'')
+		if grep -q '"_generated_by"' "$f"; then
+			wrn "$f uses '_generated_by' — the pre-provenance spelling; the next derive should write 'derived_by'"
+		else
+			wrn "$f has no 'derived_by' — nothing records whether a keeper produced it"
+		fi
+		;;
+	*)
+		err "$f derived_by '$prov' is not 'business-rules-keeper' or 'hand'"
+		;;
+	esac
+
 	fv=$(json_strings "$f" feature | head -1)
 	[ "$fv" = "$feat" ] || err "$f has feature '$fv' but is named '$base'"
 

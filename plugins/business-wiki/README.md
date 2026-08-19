@@ -95,9 +95,54 @@ sh "$PLUGIN/scripts/wiki-health.sh"     # is the system installed at all?
 sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code_refs, ADR refs
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
+bash test/run-tests.sh                  # 61 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh provenance       # only matching groups
 ```
 
 A `PostToolUse` hook runs `check-wiki.sh --changed` after any Write/Edit, so a broken link or a missing frontmatter key is caught the moment it is written. It exits silently for files outside the wiki.
+
+### `code_refs` are checked as citations, not as paths
+
+The citations **are** the authority model: a page is trustworthy because it points at the code it describes. So `check-wiki.sh` resolves each `code_refs` entry properly —
+
+- a path that no longer exists is an **error**;
+- `path:line` past the end of that file is an **error** (`score.dart:88` in a 40-line file is a dead citation that a plain existence check calls fine);
+- a ref whose file changed after the page's own `updated` date is a **warning** — not wrong on its own, but it is where wrongness accumulates. Silent outside a git repo, and skipped in hook mode so a keystroke-time check never waits on `git log`.
+
+### Provenance: `derived_by`
+
+The keepers are agents. If one can't run — no authorization, a headless session — the
+derive can still produce a correct-looking file, because a model writing carefully
+produces valid JSON. What it can't produce is a **reproducible** file: a second derive
+won't be a no-op, and the idempotence this plugin claims becomes unprovable.
+
+So every derived file records which side produced it: `derived_by` in the rules JSON
+(`business-rules-keeper` | `hand`), `info.x-derived-by` in the OpenAPI. `check-rules.sh`
+and `check-openapi.sh` **warn** on `hand` and on a missing stamp — fatal under
+`strict_check` — until a real derive replaces it. `_generated_by` is the pre-provenance
+spelling and is reported as deprecated rather than as hand-written.
+
+The derive's verdict line carries the same discipline for the gate itself:
+
+```
+drift:      0 high / 2 medium     | drift: NOT RUN (source-drift-watcher unavailable)
+keepers:    business-rules-keeper | keepers: not-run (hand-derived)
+validators: check-rules pass, check-openapi pass (1 warn)
+```
+
+`drift: NOT RUN` is a legal outcome — "no watcher" is not the same as "no findings",
+and a derive that couldn't compare documentation to code must not read like one that
+did.
+
+The point is that a hand-derive stays *visible*. Silent degradation into "the model did
+it carefully" is a worse failure than not deriving at all, because nobody knows to
+re-check it.
+
+### What the validators do NOT check
+
+They check that the output is **well-formed and internally consistent** — the YAML parses, referenced paths resolve, ids line up. None of them compares a documented rule against what the code actually does.
+
+That distinction is not academic: `check-rules.sh` and `check-openapi.sh` both **passed** on a repo whose OpenAPI still described a response shape an accepted ADR had already replaced. Agreement with code is `source-drift-watcher`'s job, it is semantic, and `/business-wiki:derive` now runs it **as a gate before regenerating anything** — a `high` finding not already recorded in `shared/divergences.md` stops the derive. Deriving from a wiki the code contradicts launders the contradiction into a machine-readable artifact that everything downstream then trusts.
 
 ## Who maintains what
 
@@ -107,5 +152,7 @@ The AI is the author. The human's job is to (1) approve the diff and (2) point a
 | --- | --- | --- |
 | Derive rules | `business-docs/wiki/features/<x>/` changed | `business-rules-keeper` regenerates `<x>.json`; a rule found only in code becomes a proposed **wiki** edit |
 | Derive OpenAPI | `features/<x>/api.md` or the code contract changed | `openapi-keeper` regenerates that fragment |
-| Detect drift | on demand or nightly | `source-drift-watcher` compares all four and reports |
+| Detect drift | **before every derive**, plus nightly if you want it | `source-drift-watcher` compares all four and reports; a new `high` finding blocks the derive |
 | Auto-improve | end of a track (`/business-wiki:harvest`) | spec-vs-code deltas, decisions without an ADR, divergences, and rules cited in code but undocumented all become proposed wiki edits |
+
+`/business-wiki:harvest` also posts a `wiki-delta` note on the sdd-tdd task when that plugin is in use — `task.sh state <id> done` refuses without one, so a track can't be called finished having never looked at the wiki.

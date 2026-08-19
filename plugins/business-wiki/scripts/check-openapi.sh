@@ -75,6 +75,22 @@ fi
 grep -q '^openapi:' "$SPEC" || err "$SPEC has no top-level 'openapi:' version key"
 grep -q '^paths:' "$SPEC" || err "$SPEC has no top-level 'paths:'"
 
+# Provenance: same reasoning as check-rules.sh. A spec the openapi-keeper generated
+# and one written by hand look identical, and only one of them is idempotent.
+prov=$(sed -n 's/^[[:space:]]*x-derived-by:[[:space:]]*["'"'"']\{0,1\}\([^"'"'"']*\)["'"'"']\{0,1\}[[:space:]]*$/\1/p' "$SPEC" | head -1)
+case "$prov" in
+openapi-keeper) ;;
+hand)
+	wrn "$SPEC is hand-derived (x-derived-by: hand) — re-run /business-wiki:derive with the keeper available"
+	;;
+'')
+	wrn "$SPEC has no 'info.x-derived-by' — nothing records whether a keeper produced it"
+	;;
+*)
+	err "$SPEC x-derived-by '$prov' is not 'openapi-keeper' or 'hand'"
+	;;
+esac
+
 # paths declared in the spec (two-space indented keys starting with /)
 spec_paths=$(sed -n '/^paths:/,/^[a-z]/p' "$SPEC" | sed -n 's/^  \(\/[A-Za-z0-9_{}\/:.-]*\):[[:space:]]*$/\1/p' | sort -u)
 [ -n "$spec_paths" ] || err "$SPEC declares no paths"

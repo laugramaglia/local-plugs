@@ -24,6 +24,20 @@ Scope: `$ARGUMENTS` if given (a branch, a PR number, a commit range); otherwise 
 
 5. **Report** the proposed edits as a reviewable diff, grouped: wiki pages, new ADRs, new divergences, derived-format changes.
 
+6. **Record the delta on the task, if this repo tracks tasks that way.** When
+   `.sdd-tdd/tasks.json` exists and the track has a task, post the list of pages
+   this harvest touched as a note titled exactly `wiki-delta`:
+
+   ```bash
+   scripts/task.sh note <id> <file listing the pages> --title "wiki-delta"
+   ```
+
+   `task.sh state <id> done` refuses without that note on a project that has a
+   wiki, which is what stops a track from being called finished having never
+   looked at the wiki. **An empty harvest still gets a note** — one line saying
+   which rules were checked and why nothing changed. "Nothing to register" is a
+   finding; a silent absence is indistinguishable from a skipped step.
+
 ## Honesty
 
 An empty harvest is a legitimate result — a refactor that changed no rule should produce no wiki edit. Say "nothing to harvest" in one line rather than manufacturing a page to look productive.
