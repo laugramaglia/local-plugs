@@ -1,0 +1,35 @@
+{
+  "name": "built-in default",
+  "description": "The marker table this plugin shipped before seam profiles existed: Flutter/Dart, Android/Kotlin, iOS/Swift, TypeScript/JavaScript (vitest, jest, playwright, testing-library) and Python (pytest). Used verbatim when a repo has no profile of its own, so nothing that worked before needs a profile now. A repo in any other ecosystem writes its own — see /sdd-init — rather than waiting for a marker to be added here.",
+  "testFilePattern": "(^|/)(test|tests|__tests__|spec|specs|e2e|androidTest|integration_test)/|(^|/)test_|_test\\.|_spec\\.|\\.test\\.|\\.spec\\.|Test\\.|Tests\\.|Spec\\.|conftest\\.py",
+  "seams": [
+    {
+      "name": "unit",
+      "globs": ["*.dart", "*.kt", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.py"],
+      "marker": "(^|[^a-zA-Z])(test\\(|it\\(|describe\\(|@Test|func test[A-Z]|XCTestCase|def test_)",
+      "note": "Deliberately broad — every ecosystem has this level, and its absence means something is wrong rather than 'this level is unavailable'. `it(`/`describe(` matter: in a vitest suite they outnumber `test(` a hundred to one. The `(^|[^a-zA-Z])` guard keeps `it(` off `commit(`, `submit(` and `exit(`."
+    },
+    {
+      "name": "widget",
+      "globs": ["*.dart", "*.kt", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+      "marker": "(pumpWidget|composeTestRule|ComposeTestRule|render\\(|@testing-library|screen\\.(getBy|findBy|queryBy)|mount\\()",
+      "note": "Render a tree, assert on what it produced. Flutter's pumpWidget, Compose's rule and testing-library's render are one seam wearing three names — a use case at this level is portable between them."
+    },
+    {
+      "name": "golden",
+      "globs": ["*.dart", "*.kt", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.py"],
+      "marker": "(matchesGoldenFile|assertSnapshot|[Pp]aparazzi|recordSnapshot|toMatchSnapshot|toMatchFileSnapshot|toMatchInlineSnapshot|== snapshot)"
+    },
+    {
+      "name": "integration",
+      "globs": ["*.dart", "*.kt", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs", "*.py"],
+      "marker": "(IntegrationTestWidgetsFlutterBinding|XCUIApplication|androidTest|[Ee]spresso|supertest|unstable_dev|SELF\\.fetch|playwright|cypress|TestClient\\(|httpx\\.AsyncClient)"
+    },
+    {
+      "name": "viewport-control",
+      "globs": ["*.dart", "*.kt", "*.swift", "*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+      "marker": "(viewInsets|setSurfaceSize|LocalDensity|UIScreen\\.main|setViewportSize|window\\.innerWidth|matchMedia|resizeTo\\()",
+      "note": "A use case about keyboard overlap or responsive layout needs more than 'widget tests exist' — it needs the ability to drive viewport/inset state. Probed separately because its absence is the difference between 'write a widget test' and 'write a widget test AND introduce inset plumbing'."
+    }
+  ]
+}

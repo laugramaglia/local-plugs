@@ -16,6 +16,13 @@
 # writing one also means introducing that test level, which is a decision to
 # surface at intake rather than discover later.
 #
+# WHICH seams exist and HOW they're recognised is not this script's business.
+# It used to be — a hardcoded marker table for Dart/Kotlin/Swift, TS/JS and
+# Python — and that made a language-agnostic process carry language knowledge:
+# a C# repo with a full xunit suite probed as NONE, so intake marked every use
+# case manual. The table is data now; see seam-profile.sh, and /sdd-init, which
+# generates a repo's profile alongside a repo-local language skill.
+#
 # Read-only. No confirmation needed.
 #
 # Usage: probe-test-seams.sh [scope-path ...]
@@ -31,8 +38,8 @@
 # values that are honest for this scope.
 set -uo pipefail
 
-# shellcheck source=_common.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
+# shellcheck source=seam-profile.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/seam-profile.sh"
 
 scopes=("$@")
 if [ "${#scopes[@]}" -eq 0 ]; then
@@ -46,9 +53,32 @@ for s in "${scopes[@]}"; do
   fi
 done
 
+# Resolved before anything is printed: a bad profile is a stop, not a probe that
+# reports "no seams" and lets a spec full of `manual` rows through.
+seam_profile_resolve || exit 1
+
 echo "# test-seam probe"
 echo "scope=${scopes[*]}"
+# The profile is part of the answer. A surprising result ("we do have goldens")
+# is almost always the wrong profile, and without this line that's invisible.
+echo "profile=$SEAM_PROFILE_LABEL"
+[ "$SEAM_PATTERN_INHERITED" -eq 1 ] && echo "note=testFilePattern inherited from the built-in default"
 echo
+
+# What counts as a test FILE, by path or name — from the profile. A marker found
+# in production code says nothing about whether tests can drive that seam, so
+# this filter is what makes the probe about the verification surface rather than
+# about the feature.
+#
+# Every ecosystem spells it differently and this is the whole portability
+# surface: Dart/Kotlin/Swift put tests in test/ or name them *_test.dart /
+# FooTest.kt; JS/TS use __tests__/, *.test.ts, *.spec.ts; Python uses tests/,
+# test_*.py, *_test.py, conftest.py; .NET uses tests/, Foo.Tests/, FooTests.cs.
+# Getting it wrong doesn't degrade the answer, it INVERTS it — the probe reports
+# "no test suite" for a package with a suite, and intake then marks every row
+# manual. That happened twice: a TypeScript worker with 7 vitest files and a C#
+# project with a Tests/ folder both probed as NONE.
+TEST_FILE_RE="$SEAM_TEST_FILE_RE"
 
 # Build the find-based file list once per glob set, then grep it. `grep -rl`
 # over the scope with --include is simpler but re-walks the tree per seam;
@@ -60,21 +90,28 @@ declare -a available_seams=()
 # can't drift into re-running the probe just to read it.
 probe_seam() {
   local name="$1" marker="$2" globs="$3"
+  # `set -f` around the split: $globs is an unquoted word-split on purpose, but
+  # without it bash also PATHNAME-expands each glob against the caller's cwd —
+  # so `*.md` silently became `--include=README.md` when run from a directory
+  # holding one, and the search found nothing.
   local includes=() g
-  for g in $globs; do
-    includes+=(--include="$g")
-  done
+  set -f
+  for g in $globs; do includes+=(--include="$g"); done
+  set +f
   # Only test files count. A marker found in production code (e.g. a widget
   # that reads viewInsets) says nothing about whether tests can drive it.
   local hits count example
   hits=$(grep -rlE "$marker" "${includes[@]}" \
     --exclude-dir=build --exclude-dir=.git --exclude-dir=node_modules \
+    --exclude-dir=dist --exclude-dir=coverage --exclude-dir=.dart_tool \
+    --exclude-dir=.venv --exclude-dir=__pycache__ --exclude-dir=vendor \
+    --exclude-dir=bin --exclude-dir=obj --exclude-dir=target \
     -- "${scopes[@]/#/$REPO_ROOT/}" 2>/dev/null \
-    | grep -E '(^|/)(test|tests|androidTest|integration_test)/|_test\.|Test\.|Tests\.|Spec\.' \
+    | grep -E "$TEST_FILE_RE" \
     || true)
   count=$(printf '%s' "$hits" | grep -c . || true)
   if [ "$count" -gt 0 ]; then
-    example=$(printf '%s' "$hits" | head -1 | sed "s|^$REPO_ROOT/||")
+    example=$(printf '%s' "$hits" | head -1 | sed -e "s|^$REPO_ROOT/||" -e 's|^\./||')
     echo "seam=$name available=yes files=$count example=$example"
     available_seams+=("$name")
   else
@@ -82,59 +119,30 @@ probe_seam() {
   fi
 }
 
-# Seams are probed by direct calls rather than a table of delimited strings:
-# every marker is a regex full of '|' alternations, so ANY single-character
-# field separator collides with the data. (It did: the first version silently
-# reported "no test suite" for a package with 19 test files, because IFS='|'
-# had shredded each regex at its first alternation.) Direct calls have no
-# separator to collide with.
-#
-# Markers are what a test at that level unavoidably contains, across the
-# ecosystems this plugin is used in (Flutter/Dart, Android/Kotlin, iOS/Swift).
-# Probing several at once is deliberate: the same task may land in a
-# Flutter monorepo or a two-native-codebase repo, and the script must not have
-# to be told which.
-#
-# `unit` is intentionally broad — every ecosystem has it, and its absence means
-# something is very wrong rather than "this level is unavailable".
-probe_seam unit \
-  '(^|[^a-zA-Z])(test\(|@Test|func test[A-Z]|XCTestCase)' \
-  '*.dart *.kt *.swift'
-probe_seam widget \
-  '(pumpWidget|composeTestRule|ComposeTestRule)' \
-  '*.dart *.kt'
-probe_seam golden \
-  '(matchesGoldenFile|assertSnapshot|[Pp]aparazzi|recordSnapshot)' \
-  '*.dart *.kt *.swift'
-probe_seam integration \
-  '(IntegrationTestWidgetsFlutterBinding|XCUIApplication|androidTest|[Ee]spresso)' \
-  '*.dart *.kt *.swift'
-# A use case about keyboard overlap or responsive layout needs more than
-# "widget tests exist" — it needs the ability to drive viewport/inset state.
-# Probed separately because its absence is the difference between "write a
-# widget test" and "write a widget test AND introduce inset plumbing".
-probe_seam viewport-control \
-  '(viewInsets|setSurfaceSize|LocalDensity|UIScreen\.main)' \
-  '*.dart *.kt *.swift'
-
-# Config may extend the seam list for a project whose test culture these
-# markers don't describe. Same principle as crossCheck: the plugin ships
-# defaults, the project gets the last word. Tab-separated because, unlike '|',
-# a tab cannot appear inside a regex written on one line.
-if [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-  custom=$(jq -r '.testSeams // {} | to_entries[] | [.key, .value.marker, (.value.glob // "*")] | @tsv' "$CONFIG" 2>/dev/null)
-  if [ -n "$custom" ]; then
-    while IFS=$'\t' read -r name marker globs; do
-      [ -n "$name" ] && probe_seam "$name" "$marker" "$globs"
-    done <<< "$custom"
-  fi
-fi
+# One pass over the profile, in its order. Markers stay regexes full of '|'
+# alternations — which is precisely why they arrive as JSON fields rather than
+# delimited strings: ANY single-character field separator collides with the data.
+# (It did, in the version before profiles: IFS='|' shredded each regex at its
+# first alternation and a package with 19 test files reported "no test suite".)
+seam_total="$(seam_count)"
+for ((i = 0; i < seam_total; i++)); do
+  probe_seam "$(seam_at "$i" name)" "$(seam_at "$i" marker)" "$(seam_at "$i" globs)"
+done
 
 echo
 echo "## suggested use case levels"
 if [ "${#available_seams[@]}" -eq 0 ]; then
   echo "NONE — this scope has no detectable test suite. Every use case here"
   echo "is manual until a test level is introduced. Say so in the spec's Gaps."
+  if [ "$SEAM_PROFILE_ORIGIN" = "default" ]; then
+    # The single most likely cause, stated where it will be read: the built-in
+    # table only knows Dart/Kotlin/Swift, TS/JS and Python. A repo in any other
+    # language needs its own profile before this answer means anything.
+    echo
+    echo "This ran on the built-in marker table (Dart/Kotlin/Swift, TS/JS, Python)."
+    echo "If this repo tests in another language, the answer above is about the"
+    echo "TABLE, not the repo — run /sdd-init to generate its seam profile first."
+  fi
 else
   echo "Honest 'Level' values for this scope: ${available_seams[*]} manual"
 fi

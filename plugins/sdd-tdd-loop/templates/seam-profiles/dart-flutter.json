@@ -1,0 +1,13 @@
+{
+  "name": "dart-flutter",
+  "description": "Flutter / Dart: package:test for unit, pumpWidget for the widget seam, matchesGoldenFile for goldens, integration_test for integration.",
+  "detect": ["pubspec.yaml"],
+  "testFilePattern": "(^|/)(test|integration_test)/|_test\\.dart$",
+  "seams": [
+    { "name": "unit",   "globs": ["*.dart"], "marker": "(^|[^a-zA-Z])(test\\(|testWidgets\\(|group\\()" },
+    { "name": "widget", "globs": ["*.dart"], "marker": "(pumpWidget|WidgetTester|find\\.by)" },
+    { "name": "golden", "globs": ["*.dart"], "marker": "matchesGoldenFile" },
+    { "name": "integration", "globs": ["*.dart"], "marker": "IntegrationTestWidgetsFlutterBinding" },
+    { "name": "viewport-control", "globs": ["*.dart"], "marker": "(viewInsets|setSurfaceSize|physicalSize)" }
+  ]
+}

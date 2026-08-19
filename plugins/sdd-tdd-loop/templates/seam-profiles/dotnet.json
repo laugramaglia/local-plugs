@@ -1,0 +1,29 @@
+{
+  "name": "dotnet",
+  "description": "C# / .NET: xunit, NUnit or MSTest for the unit seam; WebApplicationFactory, TestServer or Testcontainers for integration; Verify/ApprovalTests for the golden seam; bUnit for the component seam in Blazor repos. Drop the seams your repo doesn't actually write — a seam name it keeps is a Level intake is allowed to promise.",
+  "detect": ["*.csproj", "*.sln", "*.fsproj"],
+  "testFilePattern": "(^|/)([Tt]ests?|[Ss]pecs?)/|\\.[Tt]ests?/|[Tt]ests?\\.cs$|[Ss]pecs?\\.cs$",
+  "seams": [
+    {
+      "name": "unit",
+      "globs": ["*.cs", "*.fs"],
+      "marker": "\\[(Fact|Theory|Test|TestMethod|TestCase)|Assert\\.|\\.Should\\(\\)"
+    },
+    {
+      "name": "widget",
+      "globs": ["*.cs", "*.razor"],
+      "marker": "(RenderComponent<|TestContext\\(|Bunit)",
+      "note": "bUnit — Blazor's render-a-tree seam. Delete this entry in a repo with no Blazor components: an unavailable seam is honest, an absent one is invisible."
+    },
+    {
+      "name": "integration",
+      "globs": ["*.cs"],
+      "marker": "(WebApplicationFactory|TestServer|Testcontainers|IClassFixture<|CreateClient\\(|HttpClient\\()"
+    },
+    {
+      "name": "golden",
+      "globs": ["*.cs"],
+      "marker": "(Verify\\(|VerifyJson\\(|ApprovalTests|Approvals\\.|MatchSnapshot)"
+    }
+  ]
+}

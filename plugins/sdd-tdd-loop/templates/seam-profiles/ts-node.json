@@ -1,0 +1,33 @@
+{
+  "name": "ts-node",
+  "description": "TypeScript / JavaScript on Node or Workers: vitest or jest for unit, testing-library for the component seam, playwright/cypress/supertest for integration.",
+  "detect": ["package.json"],
+  "testFilePattern": "(^|/)(test|tests|__tests__|spec|specs|e2e)/|_test\\.|\\.test\\.|\\.spec\\.",
+  "seams": [
+    {
+      "name": "unit",
+      "globs": ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+      "marker": "(^|[^a-zA-Z])(test\\(|it\\(|describe\\()"
+    },
+    {
+      "name": "widget",
+      "globs": ["*.ts", "*.tsx", "*.js", "*.jsx"],
+      "marker": "(render\\(|@testing-library|screen\\.(getBy|findBy|queryBy)|mount\\()"
+    },
+    {
+      "name": "golden",
+      "globs": ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+      "marker": "(toMatchSnapshot|toMatchFileSnapshot|toMatchInlineSnapshot)"
+    },
+    {
+      "name": "integration",
+      "globs": ["*.ts", "*.tsx", "*.js", "*.jsx", "*.mjs", "*.cjs"],
+      "marker": "(supertest|unstable_dev|SELF\\.fetch|playwright|cypress)"
+    },
+    {
+      "name": "viewport-control",
+      "globs": ["*.ts", "*.tsx", "*.js", "*.jsx"],
+      "marker": "(setViewportSize|window\\.innerWidth|matchMedia|resizeTo\\()"
+    }
+  ]
+}

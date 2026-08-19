@@ -3,17 +3,22 @@
 #
 #   source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 #
-# It resolves configuration and reports problems. It does NOT decide policy:
-# confirmation gates live in _confirm.sh, task mutation in task.sh. One concern
-# each, so two scripts can't drift into disagreeing about the same question.
+# There is almost nothing to configure here, and that's deliberate. This is a
+# loop a human runs once per task, not an unattended agent that has to be told
+# how to behave. So the layout, the states and the phase transitions are FIXED
+# CONSTANTS below rather than config keys: a knob nobody turns is a knob that
+# only ever produces two projects that disagree about where tracks live.
 #
-# Every function here is safe to call from a script running unattended: they
-# write to stdout and return non-zero, never `exit`, so the caller decides
-# whether a missing tool is fatal.
+# Two things genuinely vary between projects, and both are about the world outside
+# the loop rather than the loop itself: whether there's a business wiki to check
+# requirements against (`.claude/sdd-tdd-loop.json` — see wiki-config.sh), and what
+# this repo can actually test (`.claude/sdd-tdd/seams.json` — see seam-profile.sh).
+# The second one is not a preference: a process that carried its own list of test
+# levels would be claiming to know the repo's language, and it doesn't.
 #
 # This plugin makes no network calls and no git mutations. `git` is read in
-# exactly one place (validate-spec.sh's renumbering baseline) and that read is
-# optional — see specBaseline.
+# exactly one place (validate-spec.sh's renumbering baseline) and that read
+# degrades to a no-op outside a git repo.
 
 # Resolved once, on source. CLAUDE_PROJECT_DIR wins because an agent's Bash may
 # start anywhere; the git toplevel is the fallback; pwd is the last resort so
@@ -22,16 +27,69 @@ REPO_ROOT="${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || 
 CONFIG="${SDD_TDD_CONFIG:-$REPO_ROOT/.claude/sdd-tdd-loop.json}"
 export REPO_ROOT CONFIG
 
+# --- the fixed layout -------------------------------------------------------
+
+TASKS_PATH_REL=".sdd-tdd/tasks.json"
+TRACKS_DIR_REL="tracks"
+
+tasks_path_rel() { printf '%s' "$TASKS_PATH_REL"; }
+tasks_path()     { printf '%s/%s' "$REPO_ROOT" "$TASKS_PATH_REL"; }
+tracks_dir_rel() { printf '%s' "$TRACKS_DIR_REL"; }
+tracks_dir()     { printf '%s/%s' "$REPO_ROOT" "$TRACKS_DIR_REL"; }
+track_dir()      { printf '%s/%s/%s' "$REPO_ROOT" "$TRACKS_DIR_REL" "$1"; }
+
+# --- the fixed workflow -----------------------------------------------------
+#
+# Five states, and each boundary is a real handover:
+#
+#   new           nobody has specified it yet
+#   specced       /sdd-spec finished: requirements + use cases exist and validate
+#   implementing  /sdd-implement is working through the cases
+#   verify        every automatable case is refactored — a human runs it now
+#   done          a human confirmed it
+#
+# plus `blocked`, reachable from and back to anywhere.
+#
+# `verify` and `done` are two states rather than one because green tests are not
+# a finished feature: nothing in this plugin ever sets `done`.
+
+STATES=(new specced implementing verify done blocked)
+
+states_list() { printf '%s\n' "${STATES[@]}"; }
+state_exists() { states_list | grep -qxF "$1"; }
+first_state() { printf '%s' "${STATES[0]}"; }
+
+# last_state — the end of the forward chain, which is NOT ${STATES[-1]}: `blocked`
+# sits last in the array because it's the escape hatch, not the finish line.
+last_state() {
+  local s last=""
+  for s in "${STATES[@]}"; do
+    [ "$s" = "blocked" ] && continue
+    last="$s"
+  done
+  printf '%s' "$last"
+}
+
+# state_index <state> — 0-based position, or empty if unknown. `blocked` has a
+# position like any other; the transition rule in task.sh special-cases it.
+state_index() {
+  states_list | grep -nxF "$1" | head -1 | cut -d: -f1 | awk '{print $1-1}'
+}
+
+# states_arrow — the workflow on one line: "new -> specced -> ...".
+# NOT `paste -sd' -> '`: paste treats its delimiter argument as a LIST of
+# single-character delimiters and cycles through them, rendering that as
+# "new specced-implementing>verify".
+states_arrow() { states_list | awk 'NR==1{printf "%s", $0; next} {printf " -> %s", $0} END{print ""}'; }
+
 # --- tool availability ------------------------------------------------------
 
-# require_tools jq  -> 0 if all present; else prints one line per missing tool
-# and returns 1. The caller decides what that means.
 require_tools() {
   local missing=0 t
   for t in "$@"; do
     if ! command -v "$t" >/dev/null 2>&1; then
       case "$t" in
-        jq) echo "STOP HERE: missing 'jq' (required to read $CONFIG and the task store)." ;;
+        jq) echo "STOP HERE: missing 'jq' (required to read the task store)." ;;
         *)  echo "STOP HERE: missing '$t'." ;;
       esac
       missing=1
@@ -42,10 +100,10 @@ require_tools() {
 
 # --- config -----------------------------------------------------------------
 #
-# The config is OPTIONAL in this plugin, unlike its board-driven ancestor.
-# There is no org, no project, no credentials — every key has a defensible
-# default, so a repo with no config file still works. require_config exists for
-# the one case that needs it: a config file that's present but unparseable.
+# The config file is optional. When it exists it holds the wiki keys, and — for a
+# repo that would rather keep one file than two — a `seams` key holding what
+# .claude/sdd-tdd/seams.json otherwise holds. Nothing else: anything more would be
+# a setting this plugin promised to honour and then had to keep honouring.
 
 have_config() { [ -f "$CONFIG" ]; }
 
@@ -57,8 +115,8 @@ require_config() {
   return 0
 }
 
-# cfg <jq-path> [default] — read one scalar. Degrades to the default when jq or
-# the config is missing, so a caller that only wants tracksDir needn't guard.
+# cfg <jq-path> [default] — read one scalar, degrading to the default when jq or
+# the config is missing.
 cfg() {
   local path="$1" default="${2:-}" value
   if [ ! -f "$CONFIG" ] || ! command -v jq >/dev/null 2>&1; then
@@ -70,19 +128,7 @@ cfg() {
   printf '%s' "$value"
 }
 
-# cfg_raw [jq-options...] <jq-filter> — for structures (arrays/objects/keys)
-# rather than scalars. Every argument is forwarded to jq, so `--arg`/`--argjson`
-# work: cfg_raw --arg k "$key" '.advanceTo[$k]'.
-cfg_raw() {
-  [ -f "$CONFIG" ] && command -v jq >/dev/null 2>&1 || return 1
-  jq -r "$@" "$CONFIG" 2>/dev/null
-}
-
 # --- tracks -----------------------------------------------------------------
-
-tracks_dir_rel() { cfg '.tracksDir' 'tracks'; }
-tracks_dir()     { printf '%s/%s' "$REPO_ROOT" "$(tracks_dir_rel)"; }
-track_dir()      { printf '%s/%s/%s' "$REPO_ROOT" "$(tracks_dir_rel)" "$1"; }
 
 # require_track <area> — the track must exist and hold a spec.md. Only the file
 # matters, not the folder layout.
@@ -90,66 +136,14 @@ require_track() {
   local area="$1" dir
   dir="$(track_dir "$area")"
   if [ ! -d "$dir" ]; then
-    echo "STOP HERE: $(tracks_dir_rel)/$area doesn't exist."
+    echo "STOP HERE: $TRACKS_DIR_REL/$area doesn't exist."
     return 1
   fi
   if [ ! -f "$dir/spec.md" ]; then
-    echo "STOP HERE: $(tracks_dir_rel)/$area has no spec.md."
+    echo "STOP HERE: $TRACKS_DIR_REL/$area has no spec.md."
     return 1
   fi
   return 0
-}
-
-# --- tasks ------------------------------------------------------------------
-# The local task store is this plugin's replacement for a board: one JSON file,
-# committed with the repo, mutated only by task.sh. A single file rather than a
-# file per task because every interesting question ("what's in `new`?", "which
-# task owns this area?") is a query across all of them, and jq answers those in
-# one read without a directory walk that can half-fail.
-
-tasks_path_rel() { cfg '.tasksPath' '.sdd-tdd/tasks.json'; }
-tasks_path()     { printf '%s/%s' "$REPO_ROOT" "$(tasks_path_rel)"; }
-
-# states_list — the project's ordered state keys, one per line. Order IS the
-# workflow: "later in this list" is what makes a transition forward.
-states_list() {
-  local out
-  out=$(cfg_raw '.states[]?' 2>/dev/null) || out=""
-  if [ -z "$out" ]; then
-    printf '%s\n' new specced implementing verify done blocked
-    return 0
-  fi
-  printf '%s\n' "$out"
-}
-
-state_exists() {
-  states_list | grep -qxF "$1"
-}
-
-# state_index <state> — 0-based position in states_list, or empty if unknown.
-# `blocked` deliberately has a position like any other state; the transition
-# rule in task.sh special-cases it, not this lookup.
-state_index() {
-  states_list | grep -nxF "$1" | head -1 | cut -d: -f1 | awk '{print $1-1}'
-}
-
-first_state() { states_list | head -1; }
-
-# advance_target <phase> — resolve advanceTo.<phase> to a state key. This is why
-# the skills pass `@spec` / `@implement` rather than a literal state name: which
-# state a phase ends in is per-project configuration, not something baked into a
-# SKILL.md. Empty output means unresolvable, and the caller must say so rather
-# than guessing.
-advance_target() {
-  local phase="$1" value
-  value=$(cfg_raw --arg p "$phase" '.advanceTo[$p] // empty' 2>/dev/null)
-  if [ -z "$value" ]; then
-    case "$phase" in
-      spec)      value="specced" ;;
-      implement) value="verify" ;;
-    esac
-  fi
-  printf '%s' "$value"
 }
 
 now_utc() { date -u +%Y-%m-%dT%H:%M:%SZ; }

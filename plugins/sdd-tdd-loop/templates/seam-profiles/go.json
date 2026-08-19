@@ -1,0 +1,11 @@
+{
+  "name": "go",
+  "description": "Go: the stdlib testing package for unit, httptest or dockertest for integration, golden-file comparisons for the golden seam (Go's own name for it).",
+  "detect": ["go.mod"],
+  "testFilePattern": "_test\\.go$",
+  "seams": [
+    { "name": "unit", "globs": ["*.go"], "marker": "func Test[A-Z]" },
+    { "name": "integration", "globs": ["*.go"], "marker": "(httptest\\.|dockertest|testcontainers)" },
+    { "name": "golden", "globs": ["*.go"], "marker": "(golden|\\.golden|cupaloy|approvals)" }
+  ]
+}

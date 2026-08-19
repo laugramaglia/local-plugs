@@ -1,0 +1,11 @@
+{
+  "name": "python",
+  "description": "Python: pytest or unittest for unit, TestClient/httpx for integration, syrupy/snapshot assertions for goldens.",
+  "detect": ["pyproject.toml", "setup.py", "requirements.txt"],
+  "testFilePattern": "(^|/)tests?/|(^|/)test_|_test\\.py$|conftest\\.py$",
+  "seams": [
+    { "name": "unit", "globs": ["*.py"], "marker": "(def test_|unittest\\.TestCase|assert )" },
+    { "name": "integration", "globs": ["*.py"], "marker": "(TestClient\\(|httpx\\.(Async)?Client|testcontainers|live_server)" },
+    { "name": "golden", "globs": ["*.py"], "marker": "(snapshot|== snapshot|syrupy)" }
+  ]
+}

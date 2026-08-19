@@ -1,0 +1,12 @@
+{
+  "name": "jvm",
+  "description": "Kotlin / Java: JUnit for unit, Compose rule or Espresso for the component seam, Paparazzi for goldens, Testcontainers or @SpringBootTest for integration.",
+  "detect": ["build.gradle", "build.gradle.kts", "pom.xml"],
+  "testFilePattern": "(^|/)(test|androidTest)/|[Tt]ests?\\.(kt|java)$",
+  "seams": [
+    { "name": "unit",   "globs": ["*.kt", "*.java"], "marker": "(@Test|assertEquals|assertThat)" },
+    { "name": "widget", "globs": ["*.kt", "*.java"], "marker": "(composeTestRule|ComposeTestRule|[Ee]spresso|onView\\()" },
+    { "name": "golden", "globs": ["*.kt", "*.java"], "marker": "([Pp]aparazzi|snapshot\\()" },
+    { "name": "integration", "globs": ["*.kt", "*.java"], "marker": "(@SpringBootTest|Testcontainers|MockMvc|androidTest)" }
+  ]
+}

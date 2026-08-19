@@ -2,31 +2,39 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "sdd-tdd-loop",
   "displayName": "SDD/TDD Loop",
-  "version": "0.1.0",
-  "description": "Local task -> spec -> use cases -> red/green/refactor. A spec-driven + test-driven working loop with a plain-file task store; no board, no PR mechanics.",
+  "version": "0.3.0",
+  "description": "One task at a time: spec -> enumerated use cases -> one test per case, red to green to refactored. Language-agnostic: /sdd-init generates this repo's test-seam profile and language skill. Plain-file task store; no board, no PR mechanics.",
   "author": {
     "name": "Lau"
   },
   "license": "MIT",
-  "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow"],
+  "keywords": [
+    "sdd",
+    "tdd",
+    "spec",
+    "use-cases",
+    "tasks",
+    "workflow",
+    "language-agnostic"
+  ],
   "userConfig": {
-    "tasks_path": {
+    "wiki_root": {
       "type": "string",
-      "title": "Task store",
-      "description": "JSON file holding the local tasks. Replaces the board.",
-      "default": ".sdd-tdd/tasks.json"
+      "title": "Business wiki root",
+      "description": "The business-wiki plugin's wiki, checked before requirements are written. Auto-detected at business-docs/wiki when present; leave empty for projects with no wiki.",
+      "default": "business-docs/wiki"
     },
-    "tracks_dir": {
+    "rules_root": {
       "type": "string",
-      "title": "Tracks directory",
-      "description": "Where a task's spec.md / contract.md / use-cases.json live.",
-      "default": "tracks"
+      "title": "Derived rules root",
+      "description": "The wiki's derived rules JSON, used for keyed lookups. Defaults to a rules/ sibling of the wiki root.",
+      "default": "business-docs/rules"
     },
-    "spec_baseline": {
+    "wiki_required": {
       "type": "string",
-      "title": "RF renumbering baseline",
-      "description": "\"git\" compares spec.md against git HEAD to catch renumbered RF/AC headers. \"off\" skips it (non-git projects).",
-      "default": "git"
+      "title": "Fail without the wiki",
+      "description": "\"true\" makes a missing wiki a hard stop instead of a gap recorded in the spec. For projects where a spec derived from code is worse than no spec.",
+      "default": "false"
     }
   }
 }
