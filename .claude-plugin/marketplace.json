@@ -18,6 +18,15 @@
       "keywords": ["documentation", "adr", "openapi", "business-rules", "drift"],
       "category": "documentation",
       "license": "MIT"
+    },
+    {
+      "name": "sdd-tdd-loop",
+      "source": "./plugins/sdd-tdd-loop",
+      "displayName": "SDD/TDD Loop",
+      "description": "Local task -> spec -> enumerated use cases -> red/green/refactor, one test per use case. Language-agnostic: /sdd-init writes this repo's test-seam profile and language skill. Plain-file task store; no board, no PR mechanics.",
+      "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow", "language-agnostic"],
+      "category": "workflow",
+      "license": "MIT"
     }
   ]
 }

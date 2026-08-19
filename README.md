@@ -17,6 +17,7 @@ Once this repo is on GitHub, `/plugin marketplace add <owner>/local-plugs` works
 | Plugin | What it gives you |
 | --- | --- |
 | [`business-wiki`](plugins/business-wiki) | A `business-docs/` tree — `wiki/` as the source of truth for business rules, with derived `rules/*.json` and `openapi/` — plus four keeper agents that regenerate them and report drift. |
+| [`sdd-tdd-loop`](plugins/sdd-tdd-loop) | Local task → `spec.md` → enumerated use cases → one test per case, driven red → green → refactored. Intake runs as the `sdd-track-planner` agent, which reads the value behind every red-first assertion before writing it down. A plain-file task store instead of a board; no PR mechanics, no poller. |
 
 ## Adding a plugin
 
