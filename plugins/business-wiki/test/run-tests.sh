@@ -757,6 +757,87 @@ EOF
   assert_not_contains "and nothing else"                             "$out" "features/"
 fi
 
+group doctor
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  doctor() { CLAUDE_PLUGIN_OPTION_OPENAPI_PATH= sh "$SCRIPTS/wiki-doctor.sh" "$@" 2>&1; }
+  rules_ok() {
+    mkdir -p business-docs/rules
+    cp "$PLUGIN_DIR/templates/rules-schema.json" business-docs/rules/_schema.json
+    printf '{\n  "_source": "business-docs/wiki/features/quiz",\n  "derived_by": "business-rules-keeper",\n  "feature": "quiz",\n  "updated": "2026-01-01",\n  "rules": [ { "id": "r", "statement": "s", "page": "index", "status": "enforced" } ]\n}\n' > business-docs/rules/quiz.json
+    printf '# docs\n' > business-docs/README.md
+  }
+
+  # A repo with no wiki must be told to bootstrap, not handed a wall of noise.
+  quiet_sb=$(mktemp -d); cd "$quiet_sb" || exit 1
+  out=$(doctor); rc=$?
+  assert_status   "no wiki: the doctor fails"  "$rc" 1
+  assert_contains "and names the one fix"      "$out" "/business-wiki:bootstrap"
+  cd "$PLUGIN_DIR" || exit 1; rm -rf "$quiet_sb"
+
+  # Every finding carries what fixes it and who owns it — that is the whole
+  # point of the script over running four validators by hand.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  rules_ok
+  printf '\nSee [[nowhere]] and [ADR-0009](../../decisions/0009-gone.md).\n' \
+    >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(doctor); rc=$?
+  assert_status   "a broken wiki fails"          "$rc" 1
+  assert_contains "the dangling link is a finding" "$out" "[[nowhere]]"
+  assert_contains "the dead relative link too"     "$out" "0009-gone.md"
+  assert_contains "each carries a fix"             "$out" "fix:"
+  assert_contains "and an owner"                   "$out" "owner: wiki-keeper"
+
+  # check-wiki reports a dangling link per page with its line; wiki-index
+  # --check reports the same edge at graph level. One fact, one finding.
+  n=$(printf '%s\n' "$out" | grep -c '\[\[nowhere\]\]')
+  if [ "$n" -eq 1 ]; then ok "two validators, one finding"; else bad "two validators, one finding" "counted $n"; fi
+
+  # --fix repairs the derived index and NOTHING authored.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  rules_ok
+  before=$(cat "$SB/business-docs/wiki/features/quiz/index.md")
+  out=$(doctor --fix); rc=$?
+  assert_status   "a healthy wiki passes"     "$rc" 0
+  assert_contains "and the index was built"   "$out" "rebuilt"
+  [ -f business-docs/index.tsv ] && ok "the file exists" || bad "the file exists" ""
+  if [ "$before" = "$(cat "$SB/business-docs/wiki/features/quiz/index.md")" ]; then
+    ok "authored prose was not touched"
+  else
+    bad "authored prose was not touched" ""
+  fi
+
+  # A second run has nothing to say and nothing to do.
+  out=$(doctor)
+  assert_contains     "a clean run says so"        "$out" "0 error(s)"
+  assert_not_contains "and claims no repair"       "$out" "fixed"
+
+  # --fix must never invent a fix for something only a human can decide.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  rules_ok
+  printf '\nSee [[nowhere]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(doctor --fix); rc=$?
+  assert_status   "--fix still fails on a broken link" "$rc" 1
+  assert_contains "leaving it as a finding"            "$out" "[[nowhere]]"
+
+  # An unmatched message takes its owner from the validator that reported it: an
+  # undocumented endpoint belongs to openapi-keeper however it is worded.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  rules_ok
+  mkdir -p business-docs/openapi
+  printf 'openapi: 3.1.0\ninfo:\n  title: t\n  version: "1"\n  x-derived-by: vibes\npaths: {}\n' \
+    > business-docs/openapi/api.yaml
+  out=$(CLAUDE_PLUGIN_OPTION_OPENAPI_PATH=business-docs/openapi/api.yaml sh "$SCRIPTS/wiki-doctor.sh" 2>&1)
+  assert_contains "an OpenAPI finding is owned by openapi-keeper" "$out" "openapi-keeper"
+
+  out=$(doctor --quiet)
+  assert_contains     "--quiet prints the verdict" "$out" "doctor:"
+  assert_not_contains "and nothing else"           "$out" "FINDINGS"
+fi
+
 group hygiene
 if [ "$SKIP_GROUP" -eq 0 ]; then
   cd "$PLUGIN_DIR" || exit 1
@@ -776,6 +857,14 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
     head -1 "$f" | grep -q '^#!/bin/sh' || bad "shebang in $(basename "$f")" "expected POSIX sh"
   done
   ok "every script declares /bin/sh"
+
+  # wiki-doctor --fix may write exactly one thing: the derived index. If it ever
+  # learns to edit the wiki, this fails and someone has to justify it.
+  if grep -qE '(mv|rm|sed -i|>[^&])' "$SCRIPTS/wiki-doctor.sh" | grep -v index; then
+    bad "the doctor only repairs derived output" "found a write outside the index"
+  else
+    ok "the doctor only repairs derived output"
+  fi
 
   for s in bootstrap feature adr derive check harvest navigate; do
     f="$PLUGIN_DIR/skills/$s/SKILL.md"
@@ -806,10 +895,12 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   miss=""
   for m in init update repair; do grep -qi "\*\*$m\*\*" "$bs" || miss="$miss $m"; done
   if [ -z "$miss" ]; then ok "bootstrap routes init/update/repair"; else bad "bootstrap routes init/update/repair" "missing:$miss"; fi
-  if grep -q 'wiki-index.sh" --write' "$bs"; then
-    ok "and builds the index itself"
+  # bootstrap must diagnose through the doctor, in both directions: routing the
+  # mode in step 0, and repairing the derived half in step 7.
+  if grep -q 'wiki-doctor.sh"$' "$bs" && grep -q 'wiki-doctor.sh" --fix' "$bs"; then
+    ok "and diagnoses and repairs through the doctor"
   else
-    bad "and builds the index itself" ""
+    bad "and diagnoses and repairs through the doctor" ""
   fi
   if grep -q 'Never overwrite authored prose' "$bs"; then
     ok "while never overwriting authored prose"

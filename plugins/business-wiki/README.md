@@ -104,13 +104,46 @@ Set at install time (`/plugin` → business-wiki → configure), all optional:
 
 POSIX `sh`, no runtime dependencies. Run them from the project root.
 
+### One diagnostic
+
+```bash
+sh "$PLUGIN/scripts/wiki-doctor.sh"          # diagnose everything
+sh "$PLUGIN/scripts/wiki-doctor.sh" --fix    # ...and repair what a script may repair
+sh "$PLUGIN/scripts/wiki-doctor.sh" --quiet  # the verdict line only
+```
+
+It runs every validator, dedupes findings that two of them report as one fact (a dangling
+link is both a page-level and a graph-level failure), and prints each with **what fixes it
+and who owns it**, errors first:
+
+```
+  setup      ok
+  wiki       4 error(s), 131 warning(s)
+  index      ok
+  graph      2 page(s) with no backlinks, 130 unlinked mention(s)
+
+FINDINGS — errors first
+  [error/wiki] .../0040-a-preset-defines-its-own-run.md:42 relative link does not resolve: 0019-the-client-is-untrusted.md
+        fix: correct the href — usually a renamed ADR whose citation was left behind   owner: wiki-keeper
+
+doctor: 4 error(s), 131 warning(s) — 1 auto-fixable, re-run with --fix
+```
+
+`--fix` rebuilds the derived index and **nothing else**, and a test enforces that. The split
+is the point: a stale index is a fact about a generated file and a script can settle it,
+while a broken link is a question about what the author meant — a script that guesses there
+produces a wiki that validates and lies. `/business-wiki:bootstrap` and
+`/business-wiki:check` both run through it.
+
+### The individual validators
+
 ```bash
 sh "$PLUGIN/scripts/wiki-health.sh"     # is the system installed at all?
 sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code_refs, ADR refs
 sh "$PLUGIN/scripts/wiki-index.sh" --check   # name collisions, dangling links, index freshness
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
-bash test/run-tests.sh                  # 159 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh                  # 179 assertions, offline, no writes outside a sandbox
 bash test/run-tests.sh provenance       # only matching groups
 ```
 

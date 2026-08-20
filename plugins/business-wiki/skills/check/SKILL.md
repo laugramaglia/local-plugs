@@ -1,11 +1,21 @@
 ---
 name: check
-description: Run the business-wiki validators and report failures with file and line.
+description: Run the business-wiki diagnostic — every validator, each finding with what fixes it and who owns it — and report the verdict.
 ---
 
 # Check the wiki
 
-Run all five validators from the project root, in this order, and report every failure — do not stop at the first one:
+Run the diagnostic from the project root:
+
+```sh
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-doctor.sh"
+```
+
+It runs every validator, dedupes findings that two of them report as one fact, and prints each with the fix and the owner, worst first. Report every finding — do not stop at the first one.
+
+Add `--fix` only when the user asked you to repair: it rebuilds the derived index and touches nothing authored.
+
+To isolate one validator:
 
 ```sh
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-health.sh"
@@ -33,4 +43,4 @@ A dead `code_refs` path usually means the code moved, not that the rule died —
 
 Offer to fix what you found, but do not fix it in this skill without being asked; `check` is a read of the system's health.
 
-End with a one-line verdict: pass, or N failures across which validators.
+End with the doctor's own verdict line, verbatim.

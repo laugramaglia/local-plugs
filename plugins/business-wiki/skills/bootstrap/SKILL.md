@@ -15,12 +15,17 @@ Templates: `${CLAUDE_PLUGIN_ROOT}/templates/`. Read each one before writing from
 
 ## 0. Work out which run this is
 
-Always start here. Two commands, before anything else:
+Always start here. One command, before anything else:
 
 ```sh
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-health.sh"
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --check
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-doctor.sh"
 ```
+
+It runs every validator, dedupes the findings, and prints for each one **what fixes it and who owns it**, ending in a verdict line. That verdict is what tells you which run this is:
+
+- `setup FAILED` / "not set up" → **init**.
+- errors or warnings, with a wiki that is set up → **update and repair**.
+- `0 error(s), 0 warning(s)` and nothing missing → there is nothing to do; say so and stop rather than manufacturing work.
 
 Then route on what you find:
 
@@ -28,7 +33,7 @@ Then route on what you find:
 | --- | --- | --- |
 | No wiki root, or a wiki root with no `features/*/index.md` | **init** | Everything below, steps 1–7. |
 | A wiki with authored features, and something missing or behind | **update** | Steps 1–3 and 6–7, **additively**. Skip step 4 except for genuinely new features. |
-| A wiki with authored features, and validators failing | **repair** | Step 7 first, then only what it flagged. |
+| A wiki with authored features, and validators failing | **repair** | Step 7 first, then only what the doctor flagged. |
 
 Update and repair usually apply together — a wiki that has fallen behind is normally also a wiki with a broken link or two. Do both in one run.
 
@@ -120,18 +125,26 @@ Run `business-wiki:business-rules-keeper` for every authored feature, then `busi
 
 *Every mode, and in repair mode this comes first.*
 
-Build the index, then run the validators:
+Diagnose, and let it repair what a script is allowed to repair:
 
 ```sh
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --write
-sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-health.sh"
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-doctor.sh" --fix
+```
+
+`--fix` rebuilds the derived index and nothing else. That split is deliberate: a stale index is a fact about a generated file and a script can settle it, while a broken link is a question about what the author meant — a script that guesses there produces a wiki that validates and lies.
+
+Then work the remaining findings **in the order the doctor prints them**, errors first. Each carries its own fix and owner. Respect the rule in step 0: a failure inside authored prose is a proposal for `wiki-keeper`, not an edit you make here.
+
+Re-run `wiki-doctor.sh` until it is clean or until what is left is deliberate, and quote the final verdict line in your report.
+
+The individual validators are still there when you want one in isolation:
+
+```sh
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-wiki.sh"
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --check
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-rules.sh"
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-openapi.sh"
-```
-
-Fix what they flag, respecting the rule in step 0 — a validator failure inside authored prose is a proposal for `wiki-keeper`, not an edit you make here. Commit `<group root>/index.tsv` along with the wiki: it is derived, like the rules JSON, and it belongs in the review.
+``` Commit `<group root>/index.tsv` along with the wiki: it is derived, like the rules JSON, and it belongs in the review.
 
 Nothing rebuilds the index outside a Claude session, so this step is also the answer to "the wiki changed under me": a `git pull`, a page edited in an editor, a fresh plugin upgrade. Running `/business-wiki:bootstrap` is always safe and is the intended way to catch up.
 
