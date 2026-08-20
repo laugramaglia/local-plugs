@@ -332,6 +332,36 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   assert_contains "and quotes it"                    "$out" "x-derived-by 'vibes'"
 fi
 
+group route-detection
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The regression this group exists for: `.get` is also how frameworks read a
+  # value. Hono's `c.get('userId')` was reported as an undocumented endpoint on
+  # a real worker, and the "fix" for that finding would have been to document an
+  # endpoint that does not exist.
+  new_sandbox
+  mkdir -p worker/src business-docs/openapi
+  {
+    printf "app.get('/health', h)\n"
+    printf "app.post('/attempts', h)\n"
+    printf "const userId = c.get('userId') as string\n"
+    printf "const page = url.searchParams.get('page')\n"
+  } > worker/src/index.ts
+  {
+    printf 'openapi: 3.1.0\ninfo:\n  title: t\n  version: "1"\n  x-derived-by: openapi-keeper\n'
+    printf 'paths:\n  /health:\n    get:\n      summary: x\n  /attempts:\n    post:\n      summary: y\n'
+  } > business-docs/openapi/api.yaml
+  out=$(CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE=worker/src sh "$SCRIPTS/check-openapi.sh" 2>&1); rc=$?
+  assert_status       "a context read is not a route"  "$rc" 0
+  assert_not_contains "and is never reported"          "$out" "userId"
+  assert_not_contains "nor is a query-param read"      "$out" "'page'"
+
+  # A genuinely undocumented route still fails.
+  printf "app.get('/secret', h)\n" >> worker/src/index.ts
+  out=$(CLAUDE_PLUGIN_OPTION_CONTRACT_SOURCE=worker/src sh "$SCRIPTS/check-openapi.sh" 2>&1); rc=$?
+  assert_status   "an undocumented route still fails" "$rc" 1
+  assert_contains "and is named"                      "$out" "exposes '/secret'"
+fi
+
 group links
 if [ "$SKIP_GROUP" -eq 0 ]; then
   # The regression this group exists for: a page that DOCUMENTS the link syntax

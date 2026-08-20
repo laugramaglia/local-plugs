@@ -161,7 +161,7 @@ sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code
 sh "$PLUGIN/scripts/wiki-index.sh" --check   # name collisions, dangling links, index freshness
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
-bash test/run-tests.sh                  # 187 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh                  # 192 assertions, offline, no writes outside a sandbox
 bash test/run-tests.sh provenance       # only matching groups
 ```
 
@@ -212,6 +212,16 @@ did.
 The point is that a hand-derive stays *visible*. Silent degradation into "the model did
 it carefully" is a worse failure than not deriving at all, because nobody knows to
 re-check it.
+
+### A route is a path, not any `.get`
+
+`check-openapi.sh` finds the routes a codebase exposes by matching
+`.get('/x')` / `.post("/x")` and friends. The argument has to start with `/`, because `.get`
+is also how frameworks *read* a value — Hono's `c.get('userId')`, a `URLSearchParams.get('page')`,
+a `Map`. Without that constraint the validator reported a real Worker as exposing an
+undocumented endpoint called `userId`, and the only way to satisfy that finding would have
+been to document an endpoint that does not exist. A validator that can be silenced by
+writing something false is worse than no validator.
 
 ### What the validators do NOT check
 
