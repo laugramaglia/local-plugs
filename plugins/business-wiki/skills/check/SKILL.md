@@ -5,11 +5,12 @@ description: Run the business-wiki validators and report failures with file and 
 
 # Check the wiki
 
-Run all four validators from the project root, in this order, and report every failure — do not stop at the first one:
+Run all five validators from the project root, in this order, and report every failure — do not stop at the first one:
 
 ```sh
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-health.sh"
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-wiki.sh"
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --check
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-rules.sh"
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/check-openapi.sh"
 ```
@@ -23,6 +24,8 @@ Group by validator, quote each failure with its `file:line`, and for each say wh
 | Failure | Fix | Owner |
 | --- | --- | --- |
 | missing/invalid frontmatter, missing section, broken `[[link]]`, dead `code_refs` path, dangling `ADR-NNNN` | edit the page | `wiki-keeper` |
+| link name claimed by two pages | rename one of them | `wiki-keeper` |
+| `business-docs/index.tsv` missing or out of date | `sh wiki-index.sh --write` | anyone — it is derived |
 | rules JSON out of step with the wiki, schema violation | re-derive | `business-rules-keeper` |
 | undocumented route, spec/code shape mismatch | re-derive | `openapi-keeper` |
 

@@ -7,6 +7,10 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/check-wiki.sh\" --changed"
+          },
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh\" --changed"
           }
         ]
       }

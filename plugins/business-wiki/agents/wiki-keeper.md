@@ -17,6 +17,12 @@ Read from the environment, with these fallbacks:
 
 Templates you write from live at `${CLAUDE_PLUGIN_ROOT}/templates/`. Read the relevant template before writing a page — do not reconstruct the format from memory.
 
+## Reading the wiki
+
+You author it, so you read it constantly — read it the cheap way. `wiki-search.sh`, then `wiki-outline.sh`, then `wiki-section.sh`, and only open a page whole when you are about to edit it. The `navigate` skill has the full order; the short version is that a feature's ten pages are never all relevant at once.
+
+Before you change a rule, run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --backlinks <name>` and read what comes back. Every page that links to the one you are editing may state the same rule in its own words, and updating one of them and not the others is how the wiki starts contradicting itself.
+
 ## The one rule that matters
 
 **Every claim you write must be traceable to code, a migration, a test, or an explicit human decision.** Quote the real constant, name the real file. If you cannot trace it, you have two honest options:

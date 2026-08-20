@@ -90,7 +90,30 @@ page() {
   } > "$SB/business-docs/wiki/features/quiz/$name.md"
 }
 
+# shared_page <name> <body...>
+shared_page() {
+  local name="$1"; shift
+  {
+    printf -- '---\npage: %s\nstatus: authored\nupdated: 2026-01-01\n---\n\n' "$name"
+    printf '# %s\n\n' "$name"
+    if [ "$#" -gt 0 ]; then printf '%s\n' "$@"; else printf 'One.\nTwo.\nThree.\nFour.\n'; fi
+  } > "$SB/business-docs/wiki/shared/$name.md"
+}
+
+# adr <NNNN> <slug>
+adr() {
+  {
+    printf -- '---\nadr: %s\ntitle: T\nstatus: accepted\ndate: 2026-01-01\n---\n\n' "$1"
+    printf '# ADR-%s — T\n\n## Context\nc\n\n## Decision\nd\n\n## Consequences\ne\n' "$1"
+  } > "$SB/business-docs/wiki/decisions/$1-$2.md"
+}
+
 check() { sh "$SCRIPTS/check-wiki.sh" "$@" 2>&1; }
+index() { sh "$SCRIPTS/wiki-index.sh" "$@" 2>&1; }
+outline() { sh "$SCRIPTS/wiki-outline.sh" "$@" 2>&1; }
+section() { sh "$SCRIPTS/wiki-section.sh" "$@" 2>&1; }
+search() { sh "$SCRIPTS/wiki-search.sh" "$@" 2>&1; }
+hook_json() { printf '{"tool_input":{"file_path":"%s/%s"}}' "$SB" "$1"; }
 
 # ========================================================================= run
 
@@ -309,6 +332,274 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   assert_contains "and quotes it"                    "$out" "x-derived-by 'vibes'"
 fi
 
+group links
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The regression this group exists for: a page that DOCUMENTS the link syntax
+  # writes [[link]] in backticks. That is an illustration, not an edge, and the
+  # old grep-based extractor reported it as a broken link.
+  new_sandbox
+  shared_page glossary
+  page index 'lib/quiz/score.dart'
+  printf 'Link a neighbour with a `[[link]]`, like this.\nReal one: [[glossary]].\n' \
+    >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status       "a [[link]] in a code span is not an edge" "$rc" 0
+  assert_not_contains "and is not reported"                      "$out" "[[link]]"
+  assert_not_contains "while the real link resolves"             "$out" "[[glossary]]"
+
+  # Same for a fenced block.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\n```\nSee [[nowhere]].\n```\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status "a link inside a fence is not an edge" "$rc" 0
+
+  # A genuinely broken link still fails, and now with its real line number
+  # rather than the first textual match.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\nSee [[nowhere]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status   "a dangling link still fails"  "$rc" 1
+  assert_contains "naming it"                    "$out" "[[nowhere]] does not resolve"
+  assert_contains "at the line it is on"         "$out" "index.md:16"
+
+  # Aliases: a feature's index answers to the bare slug, an ADR to its citation.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  page flow 'lib/quiz/score.dart'
+  adr 0001 first
+  printf '\nSee [[quiz]] and [[ADR-0001]] and [[0001-first]].\n' \
+    >> "$SB/business-docs/wiki/features/quiz/flow.md"
+  out=$(check); rc=$?
+  assert_status "the feature slug, ADR-NNNN, and the file stem all resolve" "$rc" 0
+fi
+
+group index
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  page flow 'lib/quiz/score.dart'
+  shared_page glossary
+  adr 0001 first
+  printf '\nTerms: [[glossary]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+
+  out=$(index --write)
+  assert_contains "--write reports the file" "$out" "business-docs/index.tsv"
+  [ -f business-docs/index.tsv ] && ok "and the file is there" || bad "and the file is there" ""
+
+  # Derived output lives beside rules/ and openapi/, never inside the wiki: the
+  # wiki root is the authored half and stays hand-written.
+  if [ -e business-docs/wiki/index.tsv ]; then
+    bad "the index stays out of the wiki" "found business-docs/wiki/index.tsv"
+  else
+    ok "the index stays out of the wiki"
+  fi
+
+  cols=$(grep -v '^#' business-docs/index.tsv | awk -F'\t' '{print NF}' | sort -u)
+  assert_contains "every row has 10 columns" "$cols" "10"
+  if [ "$(printf '%s' "$cols" | wc -l | tr -d ' ')" -eq 0 ]; then ok "and only 10"; else bad "and only 10" "$cols"; fi
+
+  out=$(index --path quiz)
+  assert_contains "an alias resolves to a path" "$out" "features/quiz/index.md"
+  out=$(index --path ADR-0001)
+  assert_contains "so does an ADR citation" "$out" "decisions/0001-first.md"
+  out=$(index --path quiz-flow)
+  assert_contains "and a link name" "$out" "features/quiz/flow.md"
+
+  out=$(index --backlinks glossary)
+  assert_contains "backlinks find the page that links here" "$out" "quiz-index"
+  out=$(index --links quiz-index)
+  assert_contains "and links-out is its inverse" "$out" "glossary"
+
+  out=$(index --check); rc=$?
+  assert_status "--check passes on a written, current index" "$rc" 0
+
+  # Stale is a warning, because the hook normally prevents it — and fatal under
+  # strict_check, because a stale index answers with yesterday's graph.
+  printf '\nMore: [[glossary]].\n' >> "$SB/business-docs/wiki/features/quiz/flow.md"
+  out=$(index --check); rc=$?
+  assert_status   "a stale index is a warning" "$rc" 0
+  assert_contains "that names the fix"         "$out" "--write"
+  out=$(CLAUDE_PLUGIN_OPTION_STRICT_CHECK=true index --check); rc=$?
+  assert_status "and is fatal under strict_check" "$rc" 1
+
+  # The collision the old sort -u hid: two files claiming one link name.
+  new_sandbox
+  page flow 'lib/quiz/score.dart'
+  shared_page quiz-flow
+  out=$(index --check); rc=$?
+  assert_status   "a link name claimed twice fails" "$rc" 1
+  assert_contains "naming both files"               "$out" "claimed by more than one page"
+
+  # aliases/links_out are comma-joined inside a TSV field. That is safe only
+  # because link names come from filenames — so the index asserts it instead of
+  # trusting it, or a page's backlinks vanish without a word.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  shared_page 'a,b'
+  out=$(index --check); rc=$?
+  assert_status   "a comma in a link name fails" "$rc" 1
+  assert_contains "and says to rename the file"  "$out" "contains a comma"
+
+  # --check sees dangling links at the graph level, without a per-page walk.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\nSee [[nowhere]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(index --check); rc=$?
+  assert_status   "a dangling link fails --check" "$rc" 1
+  assert_contains "and is named"                  "$out" "[[nowhere]]"
+fi
+
+group index-hook
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  shared_page glossary
+  index --write >/dev/null
+  before=$(cat business-docs/index.tsv)
+
+  out=$(hook_json lib/quiz/score.dart | sh "$SCRIPTS/wiki-index.sh" --changed 2>&1); rc=$?
+  assert_status "an edit outside the wiki exits 0" "$rc" 0
+  if [ -z "$out" ]; then ok "in silence"; else bad "in silence" "$out"; fi
+  if [ "$before" = "$(cat business-docs/index.tsv)" ]; then ok "leaving the index untouched"; else bad "leaving the index untouched" ""; fi
+
+  # An edit that does not change the graph must not touch the file either, or
+  # the index turns up in every unrelated diff.
+  out=$(hook_json business-docs/wiki/features/quiz/index.md | sh "$SCRIPTS/wiki-index.sh" --changed 2>&1); rc=$?
+  assert_status "a no-op wiki edit exits 0" "$rc" 0
+  if [ "$before" = "$(cat business-docs/index.tsv)" ]; then ok "and rewrites nothing"; else bad "and rewrites nothing" ""; fi
+
+  printf '\nTerms: [[glossary]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  hook_json business-docs/wiki/features/quiz/index.md | sh "$SCRIPTS/wiki-index.sh" --changed >/dev/null 2>&1
+  out=$(grep '^quiz-index' business-docs/index.tsv)
+  assert_contains "a real wiki edit refreshes the graph" "$out" "glossary"
+  out=$(index --check); rc=$?
+  assert_status "so --check finds nothing to say" "$rc" 0
+
+  # The invariant the whole optimisation rests on: the hook splices ONE row
+  # instead of rebuilding, so the spliced file must be byte-identical to a full
+  # build. If it drifts, --check reports the index as permanently stale.
+  index > "$SANDBOX_ROOT/full.tsv"
+  if cmp -s "$SANDBOX_ROOT/full.tsv" business-docs/index.tsv; then
+    ok "a spliced index equals a full build, byte for byte"
+  else
+    bad "a spliced index equals a full build, byte for byte" "$(diff "$SANDBOX_ROOT/full.tsv" business-docs/index.tsv | head -4)"
+  fi
+
+  # A new page and a deleted page are splices too, not just edits.
+  adr 0002 second
+  hook_json business-docs/wiki/decisions/0002-second.md | sh "$SCRIPTS/wiki-index.sh" --changed >/dev/null 2>&1
+  out=$(index --path ADR-0002)
+  assert_contains "a new page is spliced in" "$out" "0002-second.md"
+  index > "$SANDBOX_ROOT/full.tsv"
+  if cmp -s "$SANDBOX_ROOT/full.tsv" business-docs/index.tsv; then
+    ok "and the file still matches a full build"
+  else
+    bad "and the file still matches a full build" ""
+  fi
+
+  rm business-docs/wiki/decisions/0002-second.md
+  hook_json business-docs/wiki/decisions/0002-second.md | sh "$SCRIPTS/wiki-index.sh" --changed >/dev/null 2>&1
+  if grep -q '0002-second' business-docs/index.tsv; then
+    bad "a deleted page is spliced out" "row still present"
+  else
+    ok "a deleted page is spliced out"
+  fi
+fi
+
+group index-quiet
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The PostToolUse hook fires in EVERY repo, including every repo that has
+  # never installed the plugin. Loud there is a bug.
+  quiet_sb=$(mktemp -d)
+  cd "$quiet_sb" || exit 1
+  out=$(printf '{"tool_input":{"file_path":"/x/y.md"}}' | sh "$SCRIPTS/wiki-index.sh" --changed 2>&1); rc=$?
+  assert_status "--changed in a repo with no wiki exits 0" "$rc" 0
+  if [ -z "$out" ]; then ok "and says nothing"; else bad "and says nothing" "$out"; fi
+  # An explicit run must still report it: silence is for the hook, not for humans.
+  out=$(sh "$SCRIPTS/wiki-index.sh" --check 2>&1); rc=$?
+  assert_status   "but --check still fails there" "$rc" 1
+  assert_contains "pointing at bootstrap"         "$out" "/business-wiki:bootstrap"
+  cd "$PLUGIN_DIR" || exit 1
+  rm -rf "$quiet_sb"
+fi
+
+group navigate
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  shared_page glossary
+  printf '\nTerms: [[glossary]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  cat > "$SB/business-docs/wiki/features/quiz/flow.md" <<'EOF'
+---
+feature: quiz
+page: flow
+status: authored
+source_of_truth: wiki
+updated: 2026-01-01
+---
+
+# quiz — flow
+
+## Happy path
+
+The user answers and the score appears.
+
+### Scoring
+
+Unanswered questions are excluded from the denominator.
+
+## Edge cases
+
+Zero answered questions yields no score.
+EOF
+  index --write >/dev/null
+
+  out=$(outline quiz-flow)
+  assert_contains "outline lists the headings"        "$out" "## Happy path"
+  assert_contains "with their line numbers"           "$out" "11"
+  assert_contains "and nests the deeper ones"         "$out" "### Scoring"
+  assert_not_contains "without repeating the H1"      "$out" "# quiz — flow
+"
+  assert_contains "it carries the frontmatter"        "$out" "source_of_truth: wiki"
+  assert_not_contains "but not the body"              "$out" "denominator"
+
+  out=$(outline glossary)
+  assert_contains "backlinks point at what depends on a page" "$out" "quiz-index"
+
+  out=$(outline quiz)
+  assert_contains "an alias works as a target" "$out" "features/quiz/index.md"
+
+  out=$(section quiz-flow 'Happy path')
+  assert_contains     "a section returns its own heading" "$out" "## Happy path"
+  assert_contains     "and its body"                      "$out" "The user answers"
+  assert_contains     "including deeper headings inside"  "$out" "### Scoring"
+  assert_not_contains "and stops at the next H2"          "$out" "Edge cases"
+
+  out=$(section quiz-flow scoring)
+  assert_contains     "matching is case-insensitive" "$out" "### Scoring"
+  assert_not_contains "and an H3 stops at the next H2" "$out" "Zero answered"
+
+  out=$(section quiz-flow 'Nope'); rc=$?
+  assert_status   "a missing heading fails"      "$rc" 1
+  assert_contains "listing what is available"    "$out" "Happy path"
+
+  out=$(search denominator)
+  assert_contains "search finds body text with its line" "$out" "flow.md:17"
+
+  out=$(search glossary)
+  assert_contains "a query that is a name resolves exactly" "$out" "exact name match"
+
+  out=$(search score --page flow)
+  assert_contains     "filters scope the search" "$out" "flow.md"
+  assert_not_contains "to those pages only"      "$out" "index.md"
+
+  out=$(search '' --kind shared --paths-only)
+  assert_contains     "--paths-only lists the pages a filter allows" "$out" "shared/glossary.md"
+  assert_not_contains "and nothing else"                             "$out" "features/"
+fi
+
 group hygiene
 if [ "$SKIP_GROUP" -eq 0 ]; then
   cd "$PLUGIN_DIR" || exit 1
@@ -318,12 +609,18 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   hits=$(grep -nE 'git (commit|push|checkout|branch|add|merge|tag)' "$SCRIPTS"/*.sh || true)
   if [ -z "$hits" ]; then ok "no git mutation anywhere"; else bad "no git mutation anywhere" "$hits"; fi
 
+  # The read tools are read: only wiki-index.sh may ever write, and only the
+  # index. A navigation tool that edits the wiki would corrupt the thing it is
+  # supposed to describe.
+  hits=$(grep -lE '(^|[^-a-zA-Z_])(mv|rm|mkdir|tee) ' "$SCRIPTS"/wiki-outline.sh "$SCRIPTS"/wiki-section.sh 2>/dev/null || true)
+  if [ -z "$hits" ]; then ok "the read tools never write"; else bad "the read tools never write" "$hits"; fi
+
   for f in "$SCRIPTS"/*.sh; do
     head -1 "$f" | grep -q '^#!/bin/sh' || bad "shebang in $(basename "$f")" "expected POSIX sh"
   done
   ok "every script declares /bin/sh"
 
-  for s in bootstrap feature adr derive check harvest; do
+  for s in bootstrap feature adr derive check harvest navigate; do
     f="$PLUGIN_DIR/skills/$s/SKILL.md"
     if [ -f "$f" ] && head -1 "$f" | grep -q '^---$' && grep -q "^name: $s$" "$f"; then
       ok "skill $s is well-formed"
@@ -343,6 +640,24 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
     ok "and runs check-wiki before deriving"
   else
     bad "and runs check-wiki before deriving" ""
+  fi
+
+  # bootstrap is the single entry point for init/update/repair. The old skill
+  # refused to run on an existing wiki, which left upgrades with no command at
+  # all; a future edit that reintroduces the refusal fails here.
+  bs="$PLUGIN_DIR/skills/bootstrap/SKILL.md"
+  miss=""
+  for m in init update repair; do grep -qi "\*\*$m\*\*" "$bs" || miss="$miss $m"; done
+  if [ -z "$miss" ]; then ok "bootstrap routes init/update/repair"; else bad "bootstrap routes init/update/repair" "missing:$miss"; fi
+  if grep -q 'wiki-index.sh" --write' "$bs"; then
+    ok "and builds the index itself"
+  else
+    bad "and builds the index itself" ""
+  fi
+  if grep -q 'Never overwrite authored prose' "$bs"; then
+    ok "while never overwriting authored prose"
+  else
+    bad "while never overwriting authored prose" ""
   fi
 fi
 

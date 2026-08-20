@@ -14,8 +14,17 @@
       "name": "business-wiki",
       "source": "./plugins/business-wiki",
       "displayName": "Business Wiki",
-      "description": "Wiki-as-source-of-truth for business rules, with derived rules JSON and OpenAPI, plus keeper agents that regenerate them and detect drift.",
-      "keywords": ["documentation", "adr", "openapi", "business-rules", "drift"],
+      "description": "Wiki-as-source-of-truth for business rules, with a page index and link graph for cheap navigation, derived rules JSON and OpenAPI, and keeper agents that regenerate them and detect drift. One re-runnable command sets it up, updates it, and repairs it.",
+      "keywords": [
+        "documentation",
+        "adr",
+        "openapi",
+        "business-rules",
+        "drift",
+        "index",
+        "navigation",
+        "backlinks"
+      ],
       "category": "documentation",
       "license": "MIT"
     },
@@ -24,7 +33,17 @@
       "source": "./plugins/sdd-tdd-loop",
       "displayName": "SDD/TDD Loop",
       "description": "Local task -> spec -> enumerated use cases -> red/green/refactor, one test per use case. Language-agnostic: /sdd-init writes this repo's test-seam profile and language skill. /sdd-commit and /sdd-pr draft a Conventional Commit and keep a draft PR true to the track.",
-      "keywords": ["sdd", "tdd", "spec", "use-cases", "tasks", "workflow", "language-agnostic", "conventional-commits", "pull-request"],
+      "keywords": [
+        "sdd",
+        "tdd",
+        "spec",
+        "use-cases",
+        "tasks",
+        "workflow",
+        "language-agnostic",
+        "conventional-commits",
+        "pull-request"
+      ],
       "category": "workflow",
       "license": "MIT"
     }
