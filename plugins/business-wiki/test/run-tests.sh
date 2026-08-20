@@ -568,6 +568,29 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   assert_contains "an aliased [[link]] resolves to the canonical name" "$out" "quiz-flow"
 fi
 
+group placeholders
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # A real wiki documents a date format as `YYYY-MM-DD`. That is finished prose,
+  # not an unreplaced template placeholder, and calling it one was four false
+  # positives out of eight findings on a real 137-page wiki.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\nDates on the wire are civil dates, `YYYY-MM-DD`, regex-checked.\n' \
+    >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status       "a format documented in a code span is not a placeholder" "$rc" 0
+  assert_not_contains "and is not reported"                                     "$out" "placeholder"
+
+  # A genuinely unreplaced one still fails.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\nOwned by FEATURE_NAME, see PATH/TO/CODE.\n' \
+    >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status   "a real leftover placeholder still fails" "$rc" 1
+  assert_contains "and is named"                            "$out" "unreplaced template placeholder"
+fi
+
 group mentions
 if [ "$SKIP_GROUP" -eq 0 ]; then
   new_sandbox

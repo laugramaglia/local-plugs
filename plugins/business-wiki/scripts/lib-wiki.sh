@@ -316,12 +316,21 @@ page_scan() {
 				}
 			}
 
-			# leftover template placeholders — whole file, first three
-			if (nph < 3 && line ~ /FEATURE_SLUG|FEATURE_NAME|PROJECT_NAME|PATH\/TO|NNNN-slug|YYYY-MM-DD/) {
-				nph++
-				txt = substr(line, 1, 60)
-				gsub(/\t/, " ", txt)
-				printf "P\t%d\t%s\n", NR, txt
+			# leftover template placeholders — first three.
+			#
+			# Code spans are excluded, as they are everywhere else: a real wiki
+			# documents a date format as `YYYY-MM-DD` and a slug pattern as
+			# `free-daily-<YYYY-MM-DD>`, and calling those unreplaced
+			# placeholders is four false positives on a page that is finished.
+			if (nph < 3 && !fence) {
+				ph = line
+				gsub(/`[^`]*`/, "", ph)
+				if (ph ~ /FEATURE_SLUG|FEATURE_NAME|PROJECT_NAME|PATH\/TO|NNNN-slug|YYYY-MM-DD/) {
+					nph++
+					txt = substr(line, 1, 60)
+					gsub(/\t/, " ", txt)
+					printf "P\t%d\t%s\n", NR, txt
+				}
 			}
 
 			# ADR sections — whole file, presence only

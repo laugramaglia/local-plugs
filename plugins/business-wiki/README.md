@@ -110,7 +110,7 @@ sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code
 sh "$PLUGIN/scripts/wiki-index.sh" --check   # name collisions, dangling links, index freshness
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
-bash test/run-tests.sh                  # 155 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh                  # 159 assertions, offline, no writes outside a sandbox
 bash test/run-tests.sh provenance       # only matching groups
 ```
 
@@ -244,6 +244,13 @@ Only *specific* forms are expanded to — phrases, dotted or underscored names, 
 The first version also expanded to bare glossary headings, and searching `questionId` went
 from 4 matches to **779**: the heading "Question" is half the prose in a quiz wiki.
 `--no-synonyms` turns the whole thing off.
+
+### Placeholders are checked outside code spans
+
+A finished wiki documents a date format as `` `YYYY-MM-DD` ``. Treating that as an
+unreplaced template placeholder was four false positives out of eight findings on a real
+wiki — half the report. Code spans are excluded here for the same reason they are excluded
+from link extraction: inside backticks, it is an illustration.
 
 ### `--mentions`: where the graph is thinner than the wiki
 
