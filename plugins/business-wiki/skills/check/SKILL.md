@@ -23,7 +23,7 @@ Group by validator, quote each failure with its `file:line`, and for each say wh
 
 | Failure | Fix | Owner |
 | --- | --- | --- |
-| missing/invalid frontmatter, missing section, broken `[[link]]`, dead `code_refs` path, dangling `ADR-NNNN` | edit the page | `wiki-keeper` |
+| missing/invalid frontmatter, missing section, broken `[[link]]`, dead relative Markdown link, dead `code_refs` path, dangling `ADR-NNNN` | edit the page | `wiki-keeper` |
 | link name claimed by two pages | rename one of them | `wiki-keeper` |
 | `business-docs/index.tsv` missing or out of date | `sh wiki-index.sh --write` | anyone — it is derived |
 | rules JSON out of step with the wiki, schema violation | re-derive | `business-rules-keeper` |

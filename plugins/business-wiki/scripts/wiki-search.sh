@@ -4,10 +4,16 @@
 #   sh wiki-search.sh <query> [--feature f] [--page p] [--status s] [--kind k]
 #                             [--paths-only]
 #
-# Two passes, deterministic first:
+# Three passes, deterministic first:
 #   1. name resolution — a query that IS a link name, alias, or page title
 #      resolves straight to its file, with no search at all.
-#   2. body search — ripgrep (or grep) over exactly the files the filters allow.
+#   2. glossary expansion — a query that is a glossary term, or one of the
+#      per-layer names under its "In code:" line, also searches the others. The
+#      glossary exists because the client, the wire and the database name the
+#      same concept differently; that is exactly the gap a lexical search cannot
+#      close on its own, and it is closed here by a table a human reviewed
+#      rather than by an embedding. --no-synonyms turns it off.
+#   3. body search — ripgrep (or grep) over exactly the files the filters allow.
 #
 # --page is the page kind inside a feature (flow, states, validations, ...),
 # --kind is feature|shared|decision|root.
@@ -26,6 +32,7 @@ F_PAGE=""
 F_STATUS=""
 F_KIND=""
 PATHS_ONLY=no
+SYNONYMS=yes
 
 while [ $# -gt 0 ]; do
 	case "$1" in
@@ -34,6 +41,7 @@ while [ $# -gt 0 ]; do
 	--status) shift; F_STATUS="${1:-}" ;;
 	--kind) shift; F_KIND="${1:-}" ;;
 	--paths-only) PATHS_ONLY=yes ;;
+	--no-synonyms) SYNONYMS=no ;;
 	-*)
 		printf 'wiki-search: unknown flag: %s\n' "$1" >&2
 		exit 2
@@ -86,12 +94,30 @@ if [ -n "$exact" ]; then
 	printf '\n'
 fi
 
-# ---- pass 2: the body, over the allowed files only
+# ---- pass 2: the glossary as a synonym table
+PATTERN=$QUERY
+if [ "$SYNONYMS" = yes ]; then
+	syn=$(sh "$HERE/wiki-index.sh" --synonyms "$QUERY" 2>/dev/null)
+	if [ -n "$syn" ]; then
+		printf 'glossary: "%s" is also written' "$QUERY"
+		alt=""
+		printf '%s\n' "$syn" | while IFS= read -r one; do
+			[ -n "$one" ] && printf ' %s' "$one"
+		done
+		printf '\n\n'
+		# One alternation for a single search pass. The terms are identifiers
+		# and glossary headings, so they are escaped as literals.
+		alt=$(printf '%s\n%s\n' "$QUERY" "$syn" | sed 's/[][\.^$*+?(){}|\\\/]/\\&/g' | paste -sd'|' -)
+		[ -n "$alt" ] && PATTERN=$alt
+	fi
+fi
+
+# ---- pass 3: the body, over the allowed files only
 set -- $(cut -f2 "$TMP" | tr '\n' ' ')
 [ $# -gt 0 ] || exit 0
 
 if command -v rg >/dev/null 2>&1; then
-	rg --no-heading --line-number --smart-case --color never -- "$QUERY" "$@" || true
+	rg --no-heading --line-number --smart-case --color never -e "$PATTERN" "$@" || true
 else
-	grep -n -i -- "$QUERY" "$@" /dev/null || true
+	grep -nEi -e "$PATTERN" "$@" /dev/null || true
 fi

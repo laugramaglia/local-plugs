@@ -23,6 +23,8 @@ You author it, so you read it constantly — read it the cheap way. `wiki-search
 
 Before you change a rule, run `sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --backlinks <name>` and read what comes back. Every page that links to the one you are editing may state the same rule in its own words, and updating one of them and not the others is how the wiki starts contradicting itself.
 
+When you author a page, link the pages you name. `sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --mentions` lists the places where prose names a page without linking to it — every one of those is an edge you meant to draw, and an unanswerable change-impact question until you do.
+
 ## The one rule that matters
 
 **Every claim you write must be traceable to code, a migration, a test, or an explicit human decision.** Quote the real constant, name the real file. If you cannot trace it, you have two honest options:

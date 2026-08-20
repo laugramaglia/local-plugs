@@ -22,6 +22,8 @@ sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-search.sh"  <query> [--feature f] [--page
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-outline.sh" <page>
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-section.sh" <page> <heading>
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh"   --backlinks <name>
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh"   --synonyms <term>
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh"   --mentions [--all]
 ```
 
 `<page>` is a path **or** a link name **or** an alias — `checkout`,
@@ -44,6 +46,21 @@ sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh"   --backlinks <name>
    wiki.
 4. **Read the whole file** only when you are about to *edit* it, or when the
    outline shows it is short and you need all of it.
+
+## The glossary is the synonym table
+
+`wiki-search.sh` expands a query through the glossary automatically: search the
+wire name and you also get the database column and the client field, because the
+glossary lists all three for one concept. It says so in its output when it does.
+Pass `--no-synonyms` to turn it off.
+
+This is the deterministic answer to the one thing an embedding would buy here —
+and it only expands to *specific* forms (phrases, dotted or underscored names,
+camelCase). Expanding to a bare word like "question" took one real query from 4
+matches to 779.
+
+If a search comes back empty, check whether the term is in the glossary under
+another name before concluding the wiki does not cover it.
 
 ## Backlinks are the change-impact question
 
@@ -76,6 +93,18 @@ backlink:
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --check   # stale? it says so
 sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --write   # rebuild
 ```
+
+## Where the graph is thinner than the wiki
+
+```sh
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wiki-index.sh" --mentions
+```
+
+Pages that name another page in prose without linking to it, most-mentioned
+target first. Each one is an edge the writer meant and did not draw. Adding the
+link makes it visible to `--backlinks`, which is what makes change-impact
+answerable. `--all` also lists `ADR-NNNN` citations in prose, which are a
+convention of their own and are excluded by default.
 
 ## What not to do
 

@@ -9,6 +9,8 @@
 # current directory.
 
 WIKI_TAB=$(printf '\t')
+WIKI_NL='
+'
 
 # ------------------------------------------------------------------- the roots
 
@@ -133,33 +135,82 @@ extract_links() {
 	' "$1"
 }
 
-# page_fields <file> — everything the index needs from a page's CONTENT, in one
-# pass: "feature<TAB>page<TAB>status<TAB>updated<TAB>title<TAB>links_out".
+# page_fields <root> <file> — everything the index needs from a page's content,
+# in one pass, as a keyed record stream. Every record has at most one trailing
+# field that may be empty, because `read` with IFS=TAB collapses runs of tabs
+# and would otherwise shift the columns.
 #
-# This exists for speed, and the speed is not academic: the per-field helpers
-# above cost about thirty forks per page, which is twenty seconds of index build
-# on a thousand-page wiki. It must stay behaviourally identical to
-# value_of + page_title + extract_links, which is what the tests pin.
+#   K<TAB>feature|page|status|updated<TAB>value
+#   T<TAB>title
+#   W<TAB>name      a [[wikilink]]
+#   M<TAB>path      a relative Markdown link, resolved to a wiki-relative path
+#   A<TAB>slug      an `affects:` entry in an ADR's frontmatter
+#
+# The Markdown links matter as much as the wikilinks: the feature `decisions.md`
+# pages cite ADRs as [ADR-0007](../../decisions/0007-slug.md), which is a real
+# edge that a wikilink-only parser cannot see — and that left every ADR in the
+# graph with zero backlinks.
+#
+# This is one awk pass because the per-field shell helpers cost about thirty
+# forks per page, which was twenty seconds of index build on a thousand pages.
 page_fields() {
-	awk '
+	awk -v self="$2" -v root="$1" '
+		function norm(p,   n, i, parts, out, k, s) {
+			n = split(p, parts, "/")
+			k = 0
+			for (i = 1; i <= n; i++) {
+				if (parts[i] == "." || parts[i] == "") continue
+				if (parts[i] == "..") { if (k > 0) k--; continue }
+				out[++k] = parts[i]
+			}
+			s = ""
+			for (i = 1; i <= k; i++) s = s (i > 1 ? "/" : "") out[i]
+			return s
+		}
+		BEGIN {
+			dir = self
+			sub(/\/[^\/]*$/, "", dir)
+		}
 		{
 			line = $0
 
-			# links — whole file, code spans and fences excluded, first
-			# occurrence wins, exactly as extract_links sees it
+			# fences and code spans are excluded from every link form: a page
+			# documenting the syntax is illustrating it, not linking
 			if (line ~ /^[[:space:]]*(```|~~~)/) {
 				fence = 1 - fence
 			} else if (!fence) {
 				l = line
 				gsub(/`[^`]*`/, "", l)
-				while (match(l, /\[\[[^]]*\]\]/)) {
-					nm = substr(l, RSTART + 2, RLENGTH - 4)
-					if (!(nm in seen)) { seen[nm] = 1; link[++nl] = nm }
-					l = substr(l, RSTART + RLENGTH)
+
+				t = l
+				while (match(t, /\[\[[^]]*\]\]/)) {
+					nm = substr(t, RSTART + 2, RLENGTH - 4)
+					if (!(nm in seenw)) { seenw[nm] = 1; printf "W\t%s\n", nm }
+					t = substr(t, RSTART + RLENGTH)
+				}
+
+				t = l
+				while (match(t, /\]\([^)]*\.md[^)]*\)/)) {
+					href = substr(t, RSTART + 2, RLENGTH - 3)
+					t = substr(t, RSTART + RLENGTH)
+					sub(/#.*$/, "", href)
+					if (href ~ /^[a-z]+:/ || href ~ /^\//) continue
+					full = norm(dir "/" href)
+					# only a link that resolves to a real file is an
+					# edge. A dead relative link belongs to check-wiki,
+					# which reports it with a line number; putting it in
+					# the graph would invent a node for a page that does
+					# not exist.
+					if (index(full, root "/") == 1 && !(full in seenm) &&
+						(getline junk < full) >= 0) {
+						close(full)
+						seenm[full] = 1
+						printf "M\t%s\n", full
+					}
 				}
 			}
 
-			# frontmatter — first value for a key wins
+			# frontmatter
 			if (NR == 1) { if (line == "---") { fm = 1; next } }
 			if (fm) {
 				if (line ~ /^---[[:space:]]*$/) { fm = 0; next }
@@ -168,8 +219,25 @@ page_fields() {
 					v = substr(line, RLENGTH + 1)
 					sub(/^[[:space:]]+/, "", v)
 					sub(/[[:space:]]+$/, "", v)
-					if (!(k in val)) val[k] = v
+					gsub(/\t/, " ", v)
+					if (!(k in val)) {
+						val[k] = v
+						if (k == "feature" || k == "page" || k == "status" || k == "updated" || k == "date")
+							printf "K\t%s\t%s\n", k, v
+					}
+					inaffects = (k == "affects")
+					next
 				}
+				# an ADR names the features it binds in frontmatter. That is an
+				# authored edge, and until now nothing read it.
+				if (inaffects && match(line, /^[[:space:]]*-[[:space:]]*/)) {
+					a = substr(line, RLENGTH + 1)
+					gsub(/^["'"'"']|["'"'"']$/, "", a)
+					sub(/[[:space:]]+$/, "", a)
+					if (a != "") printf "A\t%s\n", a
+					next
+				}
+				if (line ~ /^[^[:space:]]/) inaffects = 0
 				next
 			}
 
@@ -177,27 +245,14 @@ page_fields() {
 			if (title == "" && line ~ /^#[[:space:]]/) {
 				title = line
 				sub(/^#[[:space:]]*/, "", title)
+				gsub(/\t/, " ", title)
+				printf "T\t%s\n", title
 			}
 		}
 		END {
-			# insertion sort: a handful of links, and a stable order keeps the
-			# file diffable and an incremental write identical to a full one
-			for (i = 2; i <= nl; i++) {
-				v = link[i]
-				for (j = i - 1; j >= 1 && link[j] > v; j--) link[j + 1] = link[j]
-				link[j + 1] = v
-			}
-			out = ""
-			for (i = 1; i <= nl; i++) out = out (i > 1 ? "," : "") link[i]
-			up = ("updated" in val) ? val["updated"] : (("date" in val) ? val["date"] : "")
-			gsub(/\t/, " ", title)
-			printf "%s\t%s\t%s\t%s\t%s\t%s\n", \
-				("feature" in val ? val["feature"] : ""), \
-				("page" in val ? val["page"] : ""), \
-				("status" in val ? val["status"] : ""), \
-				up, title, out
+			if (!("updated" in val) && ("date" in val)) printf "K\tupdated\t%s\n", val["date"]
 		}
-	' "$1"
+	' "$2"
 }
 
 # page_scan <file> — everything check-wiki.sh needs from one page, in one pass,
@@ -216,7 +271,23 @@ page_fields() {
 # extract_links + two greps, which together cost about forty forks per page and
 # forty-seven seconds of full validation on a thousand-page wiki.
 page_scan() {
-	awk '
+	awk -v self="$1" '
+		function norm(p,   n, i, parts, out, k, s) {
+			n = split(p, parts, "/")
+			k = 0
+			for (i = 1; i <= n; i++) {
+				if (parts[i] == "." || parts[i] == "") continue
+				if (parts[i] == "..") { if (k > 0) k--; continue }
+				out[++k] = parts[i]
+			}
+			s = ""
+			for (i = 1; i <= k; i++) s = s (i > 1 ? "/" : "") out[i]
+			return s
+		}
+		BEGIN {
+			dir = self
+			sub(/\/[^\/]*$/, "", dir)
+		}
 		{
 			line = $0
 
@@ -226,18 +297,31 @@ page_scan() {
 			} else if (!lfence) {
 				l = line
 				gsub(/`[^`]*`/, "", l)
-				while (match(l, /\[\[[^]]*\]\]/)) {
-					printf "L\t%d\t%s\n", NR, substr(l, RSTART + 2, RLENGTH - 4)
-					l = substr(l, RSTART + RLENGTH)
+
+				t = l
+				while (match(t, /\[\[[^]]*\]\]/)) {
+					printf "L\t%d\t%s\n", NR, substr(t, RSTART + 2, RLENGTH - 4)
+					t = substr(t, RSTART + RLENGTH)
+				}
+
+				# relative Markdown links to other pages — the other half of
+				# the graph, and until now completely unvalidated
+				t = l
+				while (match(t, /\]\([^)]*\.md[^)]*\)/)) {
+					href = substr(t, RSTART + 2, RLENGTH - 3)
+					t = substr(t, RSTART + RLENGTH)
+					sub(/#.*$/, "", href)
+					if (href ~ /^[a-z]+:/ || href ~ /^\//) continue
+					printf "D\t%d\t%s\t%s\n", NR, norm(dir "/" href), href
 				}
 			}
 
 			# leftover template placeholders — whole file, first three
 			if (nph < 3 && line ~ /FEATURE_SLUG|FEATURE_NAME|PROJECT_NAME|PATH\/TO|NNNN-slug|YYYY-MM-DD/) {
 				nph++
-				t = substr(line, 1, 60)
-				gsub(/\t/, " ", t)
-				printf "P\t%d\t%s\n", NR, t
+				txt = substr(line, 1, 60)
+				gsub(/\t/, " ", txt)
+				printf "P\t%d\t%s\n", NR, txt
 			}
 
 			# ADR sections — whole file, presence only

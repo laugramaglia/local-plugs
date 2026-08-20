@@ -110,7 +110,7 @@ sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code
 sh "$PLUGIN/scripts/wiki-index.sh" --check   # name collisions, dangling links, index freshness
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
-bash test/run-tests.sh                  # 131 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh                  # 155 assertions, offline, no writes outside a sandbox
 bash test/run-tests.sh provenance       # only matching groups
 ```
 
@@ -192,6 +192,8 @@ sh "$PLUGIN/scripts/wiki-search.sh" <query> [--feature f] [--page p] [--status s
 sh "$PLUGIN/scripts/wiki-outline.sh" <page>            # frontmatter, headings, links, backlinks
 sh "$PLUGIN/scripts/wiki-section.sh" <page> <heading>  # only that section
 sh "$PLUGIN/scripts/wiki-index.sh" --backlinks <name>  # what depends on this page
+sh "$PLUGIN/scripts/wiki-index.sh" --synonyms <term>   # the other names for one concept
+sh "$PLUGIN/scripts/wiki-index.sh" --mentions          # edges the prose implies but never drew
 ```
 
 `<page>` takes a path, a link name, or an alias. `wiki-search.sh` resolves an exact name,
@@ -202,6 +204,54 @@ when it is installed and `grep` otherwise, over exactly the files the filters al
 **Backlinks are the point.** Before changing a rule, `--backlinks` says which pages state
 or rely on it. That is the question a text search structurally cannot answer, and skipping
 it is how a wiki starts contradicting itself.
+
+### The graph is what is written, not only what is bracketed
+
+Three things are edges, because all three are authored:
+
+- `[[wikilinks]]`;
+- **relative Markdown links** — the feature `decisions.md` pages cite ADRs as
+  `[ADR-0007](../../decisions/0007-slug.md)`, and a wikilink-only parser cannot see them;
+- an ADR's **`affects:` frontmatter**, which names the features the decision binds.
+
+Measured on a real 137-page wiki: reading all three took the graph from **656 to 1,076
+edges (+64%)** and pages with no backlinks at all from **45 to 2**. All 44 of that wiki's
+ADRs were graph orphans — `--backlinks` on a decision returned nothing — while 210
+Markdown links and 148 `affects:` entries already encoded exactly those edges.
+
+Edges are stored under a page's **canonical** name, so `[[quiz]]`, `affects: quiz`, and
+`[[quiz-index]]` are one edge and `--backlinks quiz-index` finds all three.
+
+Dead relative links are `check-wiki.sh`'s business, reported with the line and the href as
+written, and never enter the graph — a broken link must not invent a node. That check
+found four dead ADR citations sitting in a real wiki that nothing had ever looked at.
+
+### The glossary as a synonym table
+
+`shared/glossary.md` exists because the client, the wire, and the database name one concept
+three ways — the mismatch it documents is exactly the gap a lexical search cannot bridge.
+`wiki-search.sh` reads it and expands the query, reporting that it did:
+
+```
+$ wiki-search.sh questionVersionId
+glossary: "questionVersionId" is also written Question version question_version.id
+```
+
+Measured on the same wiki: `question_version.id` went from 18 matches to 48 (**2.7x**),
+`questionVersionId` from 28 to 48 (**1.7x**).
+
+Only *specific* forms are expanded to — phrases, dotted or underscored names, camelCase.
+The first version also expanded to bare glossary headings, and searching `questionId` went
+from 4 matches to **779**: the heading "Question" is half the prose in a quiz wiki.
+`--no-synonyms` turns the whole thing off.
+
+### `--mentions`: where the graph is thinner than the wiki
+
+Pages that name another page in prose without linking to it — Obsidian calls these unlinked
+mentions, and each is an edge the writer meant and did not draw. **130** on the real wiki,
+led by `taxonomy-index` (19) and `offline` (16). `ADR-NNNN` citations in prose are a
+convention of their own and are excluded unless you pass `--all`, which raises the count to
+523.
 
 ### Cost
 

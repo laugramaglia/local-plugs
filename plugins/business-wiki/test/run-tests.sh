@@ -508,6 +508,140 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   fi
 fi
 
+group graph
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The gap this group exists for: on a real 137-page wiki every one of the 44
+  # ADRs had zero backlinks, because the decisions.md pages cite them as
+  # [ADR-0007](../../decisions/0007-slug.md) and nothing parsed that.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  page decisions 'lib/quiz/score.dart'
+  adr 0001 first
+  printf '\n| [ADR-0001](../../decisions/0001-first.md) | why | binds |\n' \
+    >> "$SB/business-docs/wiki/features/quiz/decisions.md"
+  index --write >/dev/null
+
+  out=$(index --backlinks 0001-first)
+  assert_contains "a relative Markdown link is an edge" "$out" "quiz-decisions"
+  out=$(check); rc=$?
+  assert_status "and the page still validates" "$rc" 0
+
+  # A dead relative link is reported by check-wiki with its real line and href,
+  # and must NOT become a phantom node in the graph.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  printf '\nSee [ADR-0009](../../decisions/0009-gone.md).\n' \
+    >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(check); rc=$?
+  assert_status   "a dead relative link fails"   "$rc" 1
+  assert_contains "naming the href as written"   "$out" "0009-gone.md"
+  assert_contains "at the line it is on"         "$out" "index.md:16"
+  out=$(index --write; grep '^quiz-index' business-docs/index.tsv)
+  assert_not_contains "and it is not in the graph" "$out" "0009-gone"
+
+  # An ADR names the features it binds in frontmatter. That is an authored edge.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  {
+    printf -- '---\nadr: 0002\ntitle: T\nstatus: accepted\ndate: 2026-01-01\naffects:\n  - quiz\n---\n\n'
+    printf '# ADR-0002 — T\n\n## Context\nc\n\n## Decision\nd\n\n## Consequences\ne\n'
+  } > "$SB/business-docs/wiki/decisions/0002-affects.md"
+  index --write >/dev/null
+  out=$(index --links 0002-affects)
+  assert_contains "affects: is an edge to the feature" "$out" "quiz-index"
+  out=$(index --backlinks quiz-index)
+  assert_contains "so the feature sees the decision" "$out" "0002-affects"
+
+  # affects: names the feature slug, which is an ALIAS. Edges are stored
+  # canonically, or --backlinks on the real name would miss them.
+  out=$(grep '^0002-affects' business-docs/index.tsv | cut -f10)
+  assert_contains     "edges are stored canonically" "$out" "quiz-index"
+  assert_not_contains "not as the alias"             "$out" "quiz,"
+
+  # Same for a wikilink written as an alias.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  page flow 'lib/quiz/score.dart'
+  printf '\nSee [[quiz]].\n' >> "$SB/business-docs/wiki/features/quiz/flow.md"
+  index --write >/dev/null
+  out=$(index --backlinks quiz-index)
+  assert_contains "an aliased [[link]] resolves to the canonical name" "$out" "quiz-flow"
+fi
+
+group mentions
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  shared_page glossary
+  printf '\nThe glossary defines the terms.\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  index --write >/dev/null
+
+  out=$(index --mentions)
+  assert_contains "a named page mentioned in prose is reported" "$out" "glossary"
+  assert_contains "with the page that mentions it"              "$out" "quiz/index.md"
+
+  # Once it is linked it is not a finding any more.
+  printf '\nSee [[glossary]].\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  index --write >/dev/null
+  out=$(index --mentions)
+  assert_not_contains "a linked mention is not reported" "$out" "quiz/index.md"
+
+  # Frontmatter is metadata, not prose: `feature: quiz` is not quiz/states.md
+  # failing to link to quiz-index.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  page states 'lib/quiz/score.dart'
+  index --write >/dev/null
+  out=$(index --mentions)
+  assert_not_contains "frontmatter is not a mention" "$out" "quiz/states.md"
+
+  # ADR-NNNN in prose is this wiki's own citation form, not a missing link.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  adr 0001 first
+  printf '\nThis follows ADR-0001 exactly.\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  index --write >/dev/null
+  out=$(index --mentions)
+  assert_not_contains "an ADR citation is not a finding by default" "$out" "0001-first"
+  out=$(index --mentions --all)
+  assert_contains "but --all reports it" "$out" "0001-first"
+fi
+
+group synonyms
+if [ "$SKIP_GROUP" -eq 0 ]; then
+  # The glossary is a hand-written synonym table: it exists because the client,
+  # the wire and the database name one concept three ways.
+  new_sandbox
+  page index 'lib/quiz/score.dart'
+  {
+    printf -- '---\npage: glossary\nstatus: authored\nupdated: 2026-01-01\n---\n\n'
+    printf '# Glossary\n\n## Question version\n\nOne immutable revision.\n\n'
+    printf -- '- **In code:** `question_version.id` (DB) / `questionVersionId` (wire).\n\n'
+    printf '## Body\n\nThe JSONB payload.\n'
+  } > "$SB/business-docs/wiki/shared/glossary.md"
+  index --write >/dev/null
+
+  out=$(index --synonyms questionVersionId)
+  assert_contains "the DB name is a synonym of the wire name" "$out" "question_version.id"
+  assert_contains "and so is the glossary heading"            "$out" "Question version"
+  out=$(index --synonyms question_version.id)
+  assert_contains "and the relation is symmetric" "$out" "questionVersionId"
+
+  # The precision guard, measured on a real wiki: expanding to the bare word
+  # "question" took one query from 4 matches to 779. Only specific forms —
+  # phrases, dotted or underscored names, camelCase — may be expanded to.
+  out=$(index --synonyms Body)
+  if [ -z "$out" ]; then ok "a plain single word expands to nothing"; else bad "a plain single word expands to nothing" "$out"; fi
+
+  # And the search reports the expansion rather than doing it invisibly.
+  printf '\nThe `question_version.id` column is the key.\n' >> "$SB/business-docs/wiki/features/quiz/index.md"
+  out=$(search questionVersionId)
+  assert_contains "search says it expanded"        "$out" "glossary:"
+  assert_contains "and finds the other spelling"   "$out" "question_version.id"
+  out=$(search questionVersionId --no-synonyms)
+  assert_not_contains "--no-synonyms turns it off" "$out" "glossary:"
+fi
+
 group index-quiet
 if [ "$SKIP_GROUP" -eq 0 ]; then
   # The PostToolUse hook fires in EVERY repo, including every repo that has

@@ -77,8 +77,6 @@ link_index=$(emit_link_names | sort -u)
 
 # Membership is tested with a case glob rather than `grep -qx` per link: on a
 # large wiki that was two forks for every [[link]] on every page.
-WIKI_NL='
-'
 link_index_flat="$WIKI_NL$link_index$WIKI_NL"
 
 # --------------------------------------------------------------------- helpers
@@ -159,9 +157,11 @@ for f in $TARGETS; do
 	l_adr=1 l_status=1 l_date=1 l_feature=1 l_page=1 l_updated=1 l_refs=1
 	refs=""
 	links=""
+	mdlinks=""
 	placeholders=""
 
 	while IFS="$WIKI_TAB" read -r rec a b c; do
+		# D carries line, resolved path, and the href as written
 		case "$rec" in
 		X) nofm=yes ;;
 		M) fm_lines=$a ;;
@@ -169,6 +169,7 @@ for f in $TARGETS; do
 		S) sections="$sections$a " ;;
 		R) refs="$refs$a$WIKI_TAB" ;;
 		L) links="$links$a:$b$WIKI_TAB" ;;
+		D) mdlinks="$mdlinks$a:$b:$c$WIKI_TAB" ;;
 		P) placeholders="$placeholders$a:$b$WIKI_TAB" ;;
 		K)
 			case "$a" in
@@ -336,6 +337,25 @@ for f in $TARGETS; do
 		*"$WIKI_NL$lnk$WIKI_NL"*) ;;
 		*) err "$f:$lnk_line [[$lnk]] does not resolve to a wiki page" ;;
 		esac
+		IFS=$WIKI_TAB
+	done
+	IFS=$saved_ifs
+
+	# ------ relative Markdown links must resolve
+	#
+	# The feature decisions.md pages cite ADRs as
+	# [ADR-0007](../../decisions/0007-slug.md). Nothing checked those until now,
+	# and a wiki can carry dead ones for months: they render as links and only
+	# fail when someone clicks.
+	IFS=$WIKI_TAB
+	for md_rec in $mdlinks; do
+		IFS=$saved_ifs
+		[ -n "$md_rec" ] || continue
+		md_line=${md_rec%%:*}
+		md_rest=${md_rec#*:}
+		md_path=${md_rest%%:*}
+		md_href=${md_rest#*:}
+		[ -e "$md_path" ] || err "$f:$md_line relative link does not resolve: $md_href"
 		IFS=$WIKI_TAB
 	done
 	IFS=$saved_ifs
