@@ -48,75 +48,92 @@ say() { [ "$QUIET" = yes ] || printf '%s\n' "$*"; }
 # Which finding is fixed by what, and by whom. Keeping this in one table is the
 # point of the script: a wall of validator output tells you what is wrong and
 # nothing about what to do next.
-classify() { # <message> <validator> -> FIX_HINT, FIX_OWNER, FIX_AUTO
+classify() { # <message> <validator> -> FIX_CAT, FIX_HINT, FIX_OWNER, FIX_AUTO
 	FIX_AUTO=no
 	case "$1" in
 	*"not set up"* | *"does not exist — run /business-wiki:bootstrap"*)
+		FIX_CAT=not-installed
 		FIX_HINT="/business-wiki:bootstrap"
 		FIX_OWNER="you"
 		;;
 	*"is out of date"* | *"index.tsv does not exist"*)
+		FIX_CAT=index-stale
 		FIX_HINT="sh wiki-index.sh --write"
 		FIX_OWNER="derived"
 		FIX_AUTO=yes
 		;;
 	*"claimed by more than one page"*)
+		FIX_CAT=name-collision
 		FIX_HINT="rename one of the two files"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"contains a comma"*)
+		FIX_CAT=name-comma
 		FIX_HINT="rename the file without the comma"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"does not resolve to a wiki page"*)
+		FIX_CAT=dangling-wikilink
 		FIX_HINT="fix the [[link]], or write the page it names"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"relative link does not resolve"*)
+		FIX_CAT=dead-relative-link
 		FIX_HINT="correct the href — usually a renamed ADR whose citation was left behind"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"code_refs path does not exist"* | *"code_refs cites"*)
+		FIX_CAT=dead-code-ref
 		FIX_HINT="update the citation; check git log --diff-filter=D before deleting the rule"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"after this page's updated"*)
+		FIX_CAT=code-moved-since
 		FIX_HINT="re-verify the page against the code, then bump updated:"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"frontmatter missing required key"* | *"not one of"* | *"is not YYYY-MM-DD"* | *"does not match"*)
+		FIX_CAT=frontmatter
 		FIX_HINT="correct the frontmatter"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"unreplaced template placeholder"*)
+		FIX_CAT=placeholder
 		FIX_HINT="write the page, or set status: stub and say what is missing"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"ADR missing"*)
+		FIX_CAT=adr-section
 		FIX_HINT="add the missing section to the ADR"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"but "*"does not exist"*)
+		FIX_CAT=missing-adr
 		FIX_HINT="write the ADR, or correct the citation in the code"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"declares no rules"*)
+		FIX_CAT=no-rules
 		FIX_HINT="the wiki states no rules for this feature yet — author it, or /business-wiki:derive"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"status: stub"*)
+		FIX_CAT=stub
 		FIX_HINT="/business-wiki:feature <name> — or leave it, an honest stub is not a defect"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"page has frontmatter but no content"* | *"is it really authored"*)
+		FIX_CAT=thin-page
 		FIX_HINT="author the page, or set status: stub"
 		FIX_OWNER="wiki-keeper"
 		;;
 	*"/business-wiki:derive"*)
+		FIX_CAT=derive-needed
 		FIX_HINT="/business-wiki:derive"
 		FIX_OWNER="business-rules-keeper"
 		;;
 	*"hand-derived"* | *"derived_by"* | *"x-derived-by"*)
+		FIX_CAT=provenance
 		FIX_HINT="/business-wiki:derive"
 		FIX_OWNER="business-rules-keeper / openapi-keeper"
 		;;
@@ -126,18 +143,22 @@ classify() { # <message> <validator> -> FIX_HINT, FIX_OWNER, FIX_AUTO
 		# openapi-keeper-s problem however it happens to be worded.
 		case "${2:-wiki}" in
 		openapi)
+			FIX_CAT=spec-behind-code
 			FIX_HINT="/business-wiki:derive — the spec is behind the code or the wiki"
 			FIX_OWNER="openapi-keeper"
 			;;
 		rules)
+			FIX_CAT=derive-needed
 			FIX_HINT="/business-wiki:derive"
 			FIX_OWNER="business-rules-keeper"
 			;;
 		setup)
+			FIX_CAT=not-installed
 			FIX_HINT="/business-wiki:bootstrap"
 			FIX_OWNER="you"
 			;;
 		*)
+			FIX_CAT=unclassified
 			FIX_HINT="see the validator that reported it"
 			FIX_OWNER="wiki-keeper"
 			;;
@@ -239,40 +260,72 @@ if [ "$QUIET" = no ]; then
 	printf '\n'
 fi
 
-nerr=$(grep -c '^error' "$OUT.dedup" 2>/dev/null)
-nwarn=$(grep -c '^warn' "$OUT.dedup" 2>/dev/null)
-nerr=${nerr:-0}
-nwarn=${nwarn:-0}
-
-if [ "$QUIET" = no ] && [ -s "$OUT.dedup" ]; then
-	printf 'FINDINGS — errors first\n'
-	{
-		grep '^error' "$OUT.dedup" 2>/dev/null
-		grep '^warn' "$OUT.dedup" 2>/dev/null
-	} > "$OUT.sorted"
-	shown=0
-	while IFS="$WIKI_TAB" read -r sev label msg; do
-		[ -n "$msg" ] || continue
-		shown=$((shown + 1))
-		if [ "$sev" = warn ] && [ "$shown" -gt 40 ]; then
-			continue
-		fi
-		classify "$msg" "$label"
-		printf '  [%s/%s] %s\n' "$sev" "$label" "$msg"
-		printf '        fix: %s   owner: %s\n' "$FIX_HINT" "$FIX_OWNER"
-	done < "$OUT.sorted"
-	if [ "$shown" -gt 40 ]; then
-		printf '  ... %d more warning(s) not listed\n' "$((shown - 40))"
-	fi
-	printf '\n'
-fi
-
+# One pass over the findings: attach category, fix and owner, so the table and
+# the listing agree by construction rather than by classifying twice.
+: > "$OUT.rich"
 auto=0
 while IFS="$WIKI_TAB" read -r sev label msg; do
 	[ -n "$msg" ] || continue
 	classify "$msg" "$label"
 	[ "$FIX_AUTO" = yes ] && auto=$((auto + 1))
+	printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+		"$sev" "$FIX_CAT" "$label" "$FIX_HINT" "$FIX_OWNER" "$msg" >> "$OUT.rich"
 done < "$OUT.dedup"
+
+nerr=$(grep -c '^error' "$OUT.rich" 2>/dev/null)
+nwarn=$(grep -c '^warn' "$OUT.rich" 2>/dev/null)
+nerr=${nerr:-0}
+nwarn=${nwarn:-0}
+
+if [ "$QUIET" = no ] && [ -s "$OUT.rich" ]; then
+	# The category table first, and complete. With 149 findings of which 128 are
+	# one category, a flat list buries the shape of the problem — and the shape
+	# is what decides the work: "the code moved under 128 pages" is one task,
+	# not 128.
+	printf 'BY CATEGORY\n'
+	awk -F'\t' '
+		{
+			k = $1 "\t" $2
+			n[k]++
+			hint[k] = $4
+			owner[k] = $5
+			ord[k] = ($1 == "error" ? 0 : 1)
+		}
+		END {
+			for (k in n)
+				printf "%d\t%06d\t%s\t%d\t%s\t%s\n", ord[k], 999999 - n[k], k, n[k], hint[k], owner[k]
+		}
+	' "$OUT.rich" | LC_ALL=C sort | awk -F'\t' '
+		{
+			printf "  %-5s %4d  %-20s owner: %s\n", $3, $5, $4, $7
+			printf "        fix: %s\n", $6
+		}
+	'
+	printf '\n'
+
+	# Then the findings: every error, and up to three examples per warning
+	# category. A silent cap reads as "that is all there is".
+	printf 'FINDINGS\n'
+	awk -F'\t' -v ex=3 '
+		$1 == "error" { printf "  [error/%s] %s\n", $3, $6; next }
+		{ w[$2] = w[$2] "\n" "  [warn/" $3 "] " $6; c[$2]++ }
+		END {
+			for (k in c) {
+				printf "\n  %s — %d\n", k, c[k]
+				n = split(w[k], lines, "\n")
+				shown = 0
+				for (i = 1; i <= n; i++) {
+					if (lines[i] == "") continue
+					shown++
+					if (shown > ex) continue
+					print lines[i]
+				}
+				if (shown > ex) printf "  ... %d more in this category\n", shown - ex
+			}
+		}
+	' "$OUT.rich"
+	printf '\n'
+fi
 
 printf 'doctor: %d error(s), %d warning(s)' "$nerr" "$nwarn"
 [ "$fixed" -gt 0 ] && printf ', %d fixed' "$fixed"

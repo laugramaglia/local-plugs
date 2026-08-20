@@ -113,21 +113,39 @@ sh "$PLUGIN/scripts/wiki-doctor.sh" --quiet  # the verdict line only
 ```
 
 It runs every validator, dedupes findings that two of them report as one fact (a dangling
-link is both a page-level and a graph-level failure), and prints each with **what fixes it
-and who owns it**, errors first:
+link is both a page-level and a graph-level failure), then **groups by category** with the
+fix and the owner per category, and lists every error plus three examples per warning
+category:
 
 ```
   setup      ok
-  wiki       4 error(s), 131 warning(s)
+  wiki       ok (131 warning(s))
   index      ok
+  openapi    1 error(s), 1 warning(s)
   graph      2 page(s) with no backlinks, 130 unlinked mention(s)
 
-FINDINGS — errors first
-  [error/wiki] .../0040-a-preset-defines-its-own-run.md:42 relative link does not resolve: 0019-the-client-is-untrusted.md
-        fix: correct the href — usually a renamed ADR whose citation was left behind   owner: wiki-keeper
+BY CATEGORY
+  error    1  spec-behind-code     owner: openapi-keeper
+        fix: /business-wiki:derive — the spec is behind the code or the wiki
+  warn   127  code-moved-since     owner: wiki-keeper
+        fix: re-verify the page against the code, then bump updated:
+  warn    14  provenance           owner: business-rules-keeper / openapi-keeper
+        fix: /business-wiki:derive
 
-doctor: 4 error(s), 131 warning(s) — 1 auto-fixable, re-run with --fix
+FINDINGS
+  [error/openapi] worker/src exposes 'userId' but api.yaml does not document it
+
+  code-moved-since — 127
+  [warn/wiki] .../attempts-grading/api.md:6 worker/src/routes/attempts.ts changed on 2026-08-19, ...
+  ... 124 more in this category
+
+doctor: 1 error(s), 149 warning(s)
 ```
+
+The grouping is not cosmetic. That run is a real 137-page wiki mid-track: 127 of its 150
+findings are one category, and *"the code moved under 127 pages"* is **one** task, not 127
+things to read. The flat list buried that. Per-category caps always announce what they held
+back — a silent cap reads as "that is all there is".
 
 `--fix` rebuilds the derived index and **nothing else**, and a test enforces that. The split
 is the point: a stale index is a fact about a generated file and a script can settle it,
@@ -143,7 +161,7 @@ sh "$PLUGIN/scripts/check-wiki.sh"      # frontmatter, sections, [[links]], code
 sh "$PLUGIN/scripts/wiki-index.sh" --check   # name collisions, dangling links, index freshness
 sh "$PLUGIN/scripts/check-rules.sh"     # rules JSON shape + wiki cross-reference
 sh "$PLUGIN/scripts/check-openapi.sh"   # spec parses; every real route documented
-bash test/run-tests.sh                  # 179 assertions, offline, no writes outside a sandbox
+bash test/run-tests.sh                  # 187 assertions, offline, no writes outside a sandbox
 bash test/run-tests.sh provenance       # only matching groups
 ```
 

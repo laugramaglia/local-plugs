@@ -833,9 +833,39 @@ if [ "$SKIP_GROUP" -eq 0 ]; then
   out=$(CLAUDE_PLUGIN_OPTION_OPENAPI_PATH=business-docs/openapi/api.yaml sh "$SCRIPTS/wiki-doctor.sh" 2>&1)
   assert_contains "an OpenAPI finding is owned by openapi-keeper" "$out" "openapi-keeper"
 
+  # Grouping exists because a flat list buries the shape: on a real wiki 127 of
+  # 150 findings were one category, and "the code moved under 127 pages" is one
+  # task, not 127 findings to read.
+  new_sandbox
+  rules_ok
+  for pg in index flow states errors validations; do
+    page "$pg" 'lib/quiz/score.dart'
+    printf '\nSee [[gone-%s]].\n' "$pg" >> "$SB/business-docs/wiki/features/quiz/$pg.md"
+  done
+  out=$(doctor)
+  assert_contains "the report groups by category"   "$out" "BY CATEGORY"
+  assert_contains "naming the category"             "$out" "dangling-wikilink"
+  assert_contains "with a count"                    "$out" "5  dangling-wikilink"
+  assert_contains "an owner per category"           "$out" "owner: wiki-keeper"
+  assert_contains "and a fix per category"          "$out" "fix: fix the [[link]]"
+
+  # Warnings are capped per category, and the cap says how many it held back —
+  # a silent cap reads as "that is all there is".
+  new_sandbox
+  rules_ok
+  for pg in index flow states errors validations api; do
+    page "$pg" 'lib/quiz/score.dart'
+    sed -i.bak 's/^status: authored/status: stub/' "$SB/business-docs/wiki/features/quiz/$pg.md"
+    rm -f "$SB/business-docs/wiki/features/quiz/$pg.md.bak"
+  done
+  out=$(doctor)
+  assert_contains "warnings are grouped too"        "$out" "stub — 6"
+  assert_contains "and the cap is announced"        "$out" "more in this category"
+
   out=$(doctor --quiet)
   assert_contains     "--quiet prints the verdict" "$out" "doctor:"
   assert_not_contains "and nothing else"           "$out" "FINDINGS"
+  assert_not_contains "not even the table"         "$out" "BY CATEGORY"
 fi
 
 group hygiene
