@@ -116,7 +116,13 @@ done
 if [ -n "$CONTRACT_SRC" ] && [ -e "$CONTRACT_SRC" ]; then
 	# Common router registration shapes: app.get('/x'), router.post("/x"),
 	# @app.route('/x'), get '/x'. Collect the quoted first argument.
-	code_paths=$(grep -rhoE "\.(get|post|put|patch|delete)\(['\"][^'\"]+['\"]" "$CONTRACT_SRC" 2>/dev/null |
+	#
+	# The argument must start with '/' to be a route. `.get` is also how several
+	# frameworks read a value: Hono's `c.get('userId')`, a URLSearchParams
+	# `.get('page')`, a Map. Without this the validator reported a real worker as
+	# exposing an undocumented endpoint called 'userId', and the honest fix for
+	# that finding would have been to document an endpoint that does not exist.
+	code_paths=$(grep -rhoE "\.(get|post|put|patch|delete)\(['\"]/[^'\"]*['\"]" "$CONTRACT_SRC" 2>/dev/null |
 		sed "s/.*(['\"]//; s/['\"]$//" | sort -u)
 	for p in $code_paths; do
 		case "$p" in

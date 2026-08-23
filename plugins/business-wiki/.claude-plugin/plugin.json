@@ -2,13 +2,19 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "business-wiki",
   "displayName": "Business Wiki",
-  "version": "0.1.0",
-  "description": "Wiki-as-source-of-truth for business rules, with derived rules JSON + OpenAPI and keeper agents.",
+  "version": "0.2.0",
+  "description": "Wiki-as-source-of-truth for business rules, with a page index and link graph, derived rules JSON + OpenAPI, and keeper agents.",
   "author": {
     "name": "Lau"
   },
   "license": "MIT",
-  "keywords": ["documentation", "adr", "openapi", "business-rules", "drift"],
+  "keywords": [
+    "documentation",
+    "adr",
+    "openapi",
+    "business-rules",
+    "drift"
+  ],
   "userConfig": {
     "wiki_root": {
       "type": "string",
@@ -27,6 +33,12 @@
       "title": "OpenAPI file",
       "description": "Derived OpenAPI document. Leave empty for projects with no HTTP surface.",
       "default": "business-docs/openapi/api.yaml"
+    },
+    "index_path": {
+      "type": "string",
+      "title": "Wiki index file",
+      "description": "Derived index of wiki pages and their link graph. Defaults to index.tsv beside the wiki root.",
+      "default": "business-docs/index.tsv"
     },
     "contract_source": {
       "type": "string",

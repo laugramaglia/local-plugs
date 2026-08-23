@@ -7,6 +7,7 @@ Three formats, one direction of authority. **`wiki/` is the source of truth for 
 | [`wiki/`](wiki/README.md) | AI, human-reviewed | by default, by humans and agents alike | **source** |
 | `rules/<feature>.json` | derived | an agent needs a rule by key, or a closed enum | derived |
 | `openapi/api.yaml` | derived | an agent is about to touch an endpoint — it reads that one path, not the whole spec | derived |
+| `index.tsv` | derived | an agent is looking for a page, a section, or what links to one | derived |
 
 It is not "JSON first, then wiki". It is **wiki by default; OpenAPI and JSON when you need precision.**
 

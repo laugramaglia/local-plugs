@@ -14,7 +14,9 @@
 
 set -u
 
-WIKI_ROOT="${CLAUDE_PLUGIN_OPTION_WIKI_ROOT:-business-docs/wiki}"
+. "$(dirname "$0")/lib-wiki.sh"
+
+WIKI_ROOT=$(wiki_root)
 STRICT="${CLAUDE_PLUGIN_OPTION_STRICT_CHECK:-false}"
 
 fails=0
@@ -37,20 +39,7 @@ TARGETS=""
 if [ $# -gt 0 ] && [ "$1" = "--changed" ]; then
 	HOOK_MODE=yes
 	shift
-	# PostToolUse delivers JSON on stdin; pull the first file_path out of it
-	# without assuming jq is installed.
-	edited=$(
-		cat 2>/dev/null |
-			tr ',{}' '\n\n\n' |
-			grep '"file_path"' |
-			head -1 |
-			sed 's/.*"file_path"[[:space:]]*:[[:space:]]*"//; s/".*//'
-	)
-	[ -n "$edited" ] || exit 0
-	# absolute -> relative to the project root
-	case "$edited" in
-	"$PWD"/*) edited=$(printf '%s' "$edited" | cut -c $((${#PWD} + 2))-) ;;
-	esac
+	edited=$(hook_edited_path) || exit 0
 	# only care about markdown inside the wiki
 	case "$edited" in
 	"$WIKI_ROOT"/*.md) TARGETS="$edited" ;;
@@ -65,62 +54,32 @@ if [ ! -d "$WIKI_ROOT" ]; then
 	exit 1
 fi
 
-ALL_PAGES=$(find "$WIKI_ROOT" -name '*.md' -type f |
-	grep -v "^$WIKI_ROOT/shared/templates/" |
-	sort)
+ALL_PAGES=$(wiki_pages "$WIKI_ROOT")
 
 if [ -z "$TARGETS" ]; then
 	TARGETS="$ALL_PAGES"
 fi
 
 # ------------------------------------------------------------ link name index
-# features/<f>/<page>.md -> "<f>-<page>";  shared/<x>.md -> "<x>"
+#
+# The naming rule itself lives in lib-wiki.sh, because the index and the
+# navigation tools resolve links against exactly the same set.
 
 emit_link_names() {
 	for f in $ALL_PAGES; do
-		rel=${f#"$WIKI_ROOT"/}
-		case "$rel" in
-		features/*/*.md)
-			feat=$(printf '%s' "$rel" | cut -d/ -f2)
-			page=$(basename "$rel" .md)
-			printf '%s-%s\n' "$feat" "$page"
-			;;
-		shared/*.md)
-			basename "$rel" .md
-			;;
-		esac
+		link_name_for "$WIKI_ROOT" "$f" && printf '%s\n' "$LINK_NAME"
+		aliases_for "$WIKI_ROOT" "$f"
+		[ -n "$LINK_ALIASES" ] && printf '%s\n' "$LINK_ALIASES" | tr ',' '\n'
 	done
 }
 
 link_index=$(emit_link_names | sort -u)
 
+# Membership is tested with a case glob rather than `grep -qx` per link: on a
+# large wiki that was two forks for every [[link]] on every page.
+link_index_flat="$WIKI_NL$link_index$WIKI_NL"
+
 # --------------------------------------------------------------------- helpers
-
-# print the frontmatter body (without the --- fences) of $1
-frontmatter() {
-	awk 'NR==1 { if ($0 != "---") exit 0; next } /^---[[:space:]]*$/ { exit } { print }' "$1"
-}
-
-# has_key <frontmatter> <key>
-has_key() {
-	printf '%s\n' "$1" | grep -q "^$2:"
-}
-
-# value_of <frontmatter> <key>
-value_of() {
-	printf '%s\n' "$1" | sed -n "s/^$2:[[:space:]]*//p" | head -1
-}
-
-# list_items <frontmatter> <key>  — YAML block-sequence values under <key>
-list_items() {
-	printf '%s\n' "$1" | awk -v k="$2" '
-		$0 ~ "^"k":" { inblock = 1; next }
-		inblock && /^[[:space:]]*-[[:space:]]*/ {
-			sub(/^[[:space:]]*-[[:space:]]*/, ""); gsub(/^["'"'"']|["'"'"']$/, ""); print; next
-		}
-		inblock && /^[^[:space:]]/ { inblock = 0 }
-	'
-}
 
 # line_of <file> <pattern> — first matching line number, or 1
 line_of() {
@@ -128,15 +87,37 @@ line_of() {
 	[ -n "$n" ] && printf '%s' "$n" || printf '1'
 }
 
+# A case glob rather than printf|grep: this runs several times per page, and two
+# forks each is measurable across a large wiki.
 is_date() {
-	printf '%s' "$1" | grep -q '^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$'
+	case "$1" in
+	[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) return 0 ;;
+	esac
+	return 1
 }
 
 # A scratch file so the code_refs loop reads from a redirect rather than a pipe:
 # in a pipeline the loop body runs in a subshell, where err()/wrn() increment a
 # copy of the counters and every finding is lost on the way out.
-REFS_TMP="${TMPDIR:-/tmp}/check-wiki.refs.$$"
-trap 'rm -f "$REFS_TMP"' EXIT INT TERM
+SCAN_TMP="${TMPDIR:-/tmp}/check-wiki.scan.$$"
+trap 'rm -f "$SCAN_TMP"' EXIT INT TERM
+
+# Memo for `git log -1` results, as one string, looked up with parameter
+# expansion so a repeated code_refs path costs no fork at all. Wiki pages cite
+# the same handful of source files constantly.
+GIT_DATES="|"
+git_last_change() { # <path> -> GIT_DATE
+	case "$GIT_DATES" in
+	*"|$1="*)
+		GIT_DATE=${GIT_DATES#*"|$1="}
+		GIT_DATE=${GIT_DATE%%"|"*}
+		;;
+	*)
+		GIT_DATE=$(git log -1 --format=%cd --date=short -- "$1" 2>/dev/null)
+		GIT_DATES="$GIT_DATES$1=$GIT_DATE|"
+		;;
+	esac
+}
 
 # The staleness check is a nice-to-have: outside a git repo it must vanish
 # silently rather than reporting every page as fresh, and it stays out of hook
@@ -162,75 +143,115 @@ for f in $TARGETS; do
 	README.md | shared/templates/*) continue ;;
 	esac
 
-	if [ "$(head -1 "$f")" != "---" ]; then
+	# ------ one pass over the page; everything below reads the result
+	page_scan "$f" > "$SCAN_TMP"
+
+	nofm=no
+	fm_lines=0
+	body_lines=0
+	sections=" "
+	# k_<key>=1 when present, v_<key> its value, l_<key> its line
+	p_adr=no p_title=no p_status=no p_date=no
+	p_feature=no p_page=no p_sot=no p_updated=no
+	v_adr="" v_status="" v_date="" v_feature="" v_page="" v_updated=""
+	l_adr=1 l_status=1 l_date=1 l_feature=1 l_page=1 l_updated=1 l_refs=1
+	refs=""
+	links=""
+	mdlinks=""
+	placeholders=""
+
+	while IFS="$WIKI_TAB" read -r rec a b c; do
+		# D carries line, resolved path, and the href as written
+		case "$rec" in
+		X) nofm=yes ;;
+		M) fm_lines=$a ;;
+		B) body_lines=$a ;;
+		S) sections="$sections$a " ;;
+		R) refs="$refs$a$WIKI_TAB" ;;
+		L) links="$links$a:$b$WIKI_TAB" ;;
+		D) mdlinks="$mdlinks$a:$b:$c$WIKI_TAB" ;;
+		P) placeholders="$placeholders$a:$b$WIKI_TAB" ;;
+		K)
+			case "$a" in
+			adr) p_adr=yes v_adr=$c l_adr=$b ;;
+			title) p_title=yes ;;
+			status) p_status=yes v_status=$c l_status=$b ;;
+			date) p_date=yes v_date=$c l_date=$b ;;
+			feature) p_feature=yes v_feature=$c l_feature=$b ;;
+			page) p_page=yes v_page=$c l_page=$b ;;
+			source_of_truth) p_sot=yes ;;
+			updated) p_updated=yes v_updated=$c l_updated=$b ;;
+			code_refs) l_refs=$b ;;
+			esac
+			;;
+		esac
+	done < "$SCAN_TMP"
+
+	if [ "$nofm" = yes ]; then
 		err "$f:1 missing frontmatter (file must start with ---)"
 		continue
 	fi
-
-	fm=$(frontmatter "$f")
-	if [ -z "$fm" ]; then
+	if [ "$fm_lines" -eq 0 ]; then
 		err "$f:1 empty or unterminated frontmatter block"
 		continue
 	fi
 
 	case "$rel" in
 	decisions/*.md)
-		for k in adr title status date; do
-			has_key "$fm" "$k" || err "$f:1 frontmatter missing required key '$k'"
-		done
-		st=$(value_of "$fm" status)
-		case "$st" in
+		[ "$p_adr" = yes ] || err "$f:1 frontmatter missing required key 'adr'"
+		[ "$p_title" = yes ] || err "$f:1 frontmatter missing required key 'title'"
+		[ "$p_status" = yes ] || err "$f:1 frontmatter missing required key 'status'"
+		[ "$p_date" = yes ] || err "$f:1 frontmatter missing required key 'date'"
+		case "$v_status" in
 		proposed | accepted | superseded | rejected | "") ;;
-		*) err "$f:$(line_of "$f" '^status:') status '$st' not one of proposed|accepted|superseded|rejected" ;;
+		*) err "$f:$l_status status '$v_status' not one of proposed|accepted|superseded|rejected" ;;
 		esac
-		d=$(value_of "$fm" date)
-		is_date "$d" || err "$f:$(line_of "$f" '^date:') date '$d' is not YYYY-MM-DD"
-		num=$(basename "$rel" | cut -d- -f1)
-		adr=$(value_of "$fm" adr)
-		[ "$num" = "$adr" ] || err "$f:$(line_of "$f" '^adr:') frontmatter adr '$adr' does not match filename number '$num'"
-		grep -q '^## Context' "$f" || err "$f:1 ADR missing '## Context'"
-		grep -q '^## Decision' "$f" || err "$f:1 ADR missing '## Decision'"
-		grep -q '^## Consequences' "$f" || err "$f:1 ADR missing '## Consequences'"
+		is_date "$v_date" || err "$f:$l_date date '$v_date' is not YYYY-MM-DD"
+		num=${rel##*/}
+		num=${num%%-*}
+		[ "$num" = "$v_adr" ] || err "$f:$l_adr frontmatter adr '$v_adr' does not match filename number '$num'"
+		case "$sections" in *" Context "*) ;; *) err "$f:1 ADR missing '## Context'" ;; esac
+		case "$sections" in *" Decision "*) ;; *) err "$f:1 ADR missing '## Decision'" ;; esac
+		case "$sections" in *" Consequences "*) ;; *) err "$f:1 ADR missing '## Consequences'" ;; esac
 		;;
 	*)
 		# feature and shared pages
-		req="page status updated"
+		[ "$p_page" = yes ] || err "$f:1 frontmatter missing required key 'page'"
+		[ "$p_status" = yes ] || err "$f:1 frontmatter missing required key 'status'"
+		[ "$p_updated" = yes ] || err "$f:1 frontmatter missing required key 'updated'"
 		case "$rel" in
-		features/*) req="feature page status source_of_truth updated" ;;
+		features/*)
+			[ "$p_feature" = yes ] || err "$f:1 frontmatter missing required key 'feature'"
+			[ "$p_sot" = yes ] || err "$f:1 frontmatter missing required key 'source_of_truth'"
+			;;
 		esac
-		for k in $req; do
-			has_key "$fm" "$k" || err "$f:1 frontmatter missing required key '$k'"
-		done
 
-		st=$(value_of "$fm" status)
-		case "$st" in
+		case "$v_status" in
 		authored | stub) ;;
-		*) err "$f:$(line_of "$f" '^status:') status '$st' not one of authored|stub" ;;
+		*) err "$f:$l_status status '$v_status' not one of authored|stub" ;;
 		esac
 
-		u=$(value_of "$fm" updated)
-		is_date "$u" || err "$f:$(line_of "$f" '^updated:') updated '$u' is not YYYY-MM-DD"
+		is_date "$v_updated" || err "$f:$l_updated updated '$v_updated' is not YYYY-MM-DD"
 
 		case "$rel" in
 		features/*)
-			feat_dir=$(printf '%s' "$rel" | cut -d/ -f2)
-			feat_fm=$(value_of "$fm" feature)
-			[ "$feat_dir" = "$feat_fm" ] || err "$f:$(line_of "$f" '^feature:') frontmatter feature '$feat_fm' does not match directory '$feat_dir'"
-			page_fm=$(value_of "$fm" page)
-			page_file=$(basename "$rel" .md)
-			[ "$page_fm" = "$page_file" ] || err "$f:$(line_of "$f" '^page:') frontmatter page '$page_fm' does not match filename '$page_file'"
+			feat_dir=${rel#features/}
+			feat_dir=${feat_dir%%/*}
+			[ "$feat_dir" = "$v_feature" ] || err "$f:$l_feature frontmatter feature '$v_feature' does not match directory '$feat_dir'"
+			page_file=${rel##*/}
+			page_file=${page_file%.md}
+			[ "$v_page" = "$page_file" ] || err "$f:$l_page frontmatter page '$v_page' does not match filename '$page_file'"
 			;;
 		esac
 
 		# body must not be empty
-		body_lines=$(awk 'NR==1{next} /^---[[:space:]]*$/ && !seen {seen=1; next} seen && NF {c++} END{print c+0}' "$f")
 		if [ "$body_lines" -eq 0 ]; then
 			err "$f:1 page has frontmatter but no content"
-		elif [ "$st" = "authored" ] && [ "$body_lines" -lt 4 ]; then
+		elif [ "$v_status" = "authored" ] && [ "$body_lines" -lt 4 ]; then
 			wrn "$f:1 status is 'authored' but the body is $body_lines lines — is it really authored?"
 		fi
 
-		[ "$st" = "stub" ] && wrn "$f:1 status: stub"
+		[ "$v_status" = "stub" ] && wrn "$f:1 status: stub"
 		;;
 	esac
 
@@ -240,12 +261,13 @@ for f in $TARGETS; do
 	# points at the code it describes. So a ref is checked as a citation, not as a
 	# path — `lib/quiz/score.dart:88` in a file that is 40 lines long is dead, and
 	# a plain existence check calls it fine.
-	page_date=$(value_of "$fm" updated)
-	[ -n "$page_date" ] || page_date=$(value_of "$fm" date)
-	refs_line=$(line_of "$f" '^code_refs:')
+	page_date=$v_updated
+	[ -n "$page_date" ] || page_date=$v_date
 
-	list_items "$fm" code_refs > "$REFS_TMP"
-	while IFS= read -r ref; do
+	saved_ifs=$IFS
+	IFS=$WIKI_TAB
+	for ref in $refs; do
+		IFS=$saved_ifs
 		[ -n "$ref" ] || continue
 
 		# path:line — only a trailing all-digits segment counts, so a Windows-ish
@@ -255,26 +277,32 @@ for f in $TARGETS; do
 		case $ref in
 		*:*)
 			maybe=${ref##*:}
-			if printf '%s' "$maybe" | grep -q '^[0-9][0-9]*$'; then
+			case $maybe in
+			*[!0-9]* | "") ;;
+			*)
 				ref_path=${ref%:*}
 				ref_line=$maybe
-			fi
+				;;
+			esac
 			;;
 		esac
 
 		if [ ! -e "$ref_path" ]; then
-			err "$f:$refs_line code_refs path does not exist: $ref_path"
+			err "$f:$l_refs code_refs path does not exist: $ref_path"
+			IFS=$WIKI_TAB
 			continue
 		fi
 
 		if [ -n "$ref_line" ]; then
 			if [ ! -f "$ref_path" ]; then
-				err "$f:$refs_line code_refs cites line $ref_line of $ref_path, which is not a file"
+				err "$f:$l_refs code_refs cites line $ref_line of $ref_path, which is not a file"
+				IFS=$WIKI_TAB
 				continue
 			fi
 			n_lines=$(wc -l < "$ref_path" | tr -d ' ')
 			if [ "$ref_line" -gt "${n_lines:-0}" ]; then
-				err "$f:$refs_line code_refs cites $ref_path:$ref_line but that file has $n_lines line(s)"
+				err "$f:$l_refs code_refs cites $ref_path:$ref_line but that file has $n_lines line(s)"
+				IFS=$WIKI_TAB
 				continue
 			fi
 		fi
@@ -283,29 +311,66 @@ for f in $TARGETS; do
 		# but it is where wrongness accumulates — source-drift-watcher's comparison
 		# 6, made cheap enough to run on every check.
 		if [ "$GIT_OK" = yes ] && is_date "$page_date"; then
-			last=$(git log -1 --format=%cd --date=short -- "$ref_path" 2>/dev/null)
-			if is_date "$last" && [ "$last" \> "$page_date" ]; then
-				wrn "$f:$refs_line $ref_path changed on $last, after this page's updated: $page_date"
+			git_last_change "$ref_path"
+			if is_date "$GIT_DATE" && [ "$GIT_DATE" \> "$page_date" ]; then
+				wrn "$f:$l_refs $ref_path changed on $GIT_DATE, after this page's updated: $page_date"
 			fi
 		fi
-	done < "$REFS_TMP"
+		IFS=$WIKI_TAB
+	done
+	IFS=$saved_ifs
 
 	# ------ [[links]] must resolve
-	for lnk in $(grep -o '\[\[[^]]*\]\]' "$f" 2>/dev/null | sed 's/^\[\[//; s/\]\]$//' | sort -u); do
-		if ! printf '%s\n' "$link_index" | grep -qx "$lnk"; then
-			err "$f:$(line_of "$f" "\[\[$lnk\]\]") [[$lnk]] does not resolve to a wiki page"
-		fi
+	#
+	# extract_links reported the real line and skipped code spans; page_scan does
+	# the same, so a page documenting the syntax in backticks is not a broken link.
+	seen_links=" "
+	IFS=$WIKI_TAB
+	for lnk_rec in $links; do
+		IFS=$saved_ifs
+		[ -n "$lnk_rec" ] || continue
+		lnk_line=${lnk_rec%%:*}
+		lnk=${lnk_rec#*:}
+		case "$seen_links" in *" $lnk "*) IFS=$WIKI_TAB; continue ;; esac
+		seen_links="$seen_links$lnk "
+		case "$link_index_flat" in
+		*"$WIKI_NL$lnk$WIKI_NL"*) ;;
+		*) err "$f:$lnk_line [[$lnk]] does not resolve to a wiki page" ;;
+		esac
+		IFS=$WIKI_TAB
 	done
+	IFS=$saved_ifs
+
+	# ------ relative Markdown links must resolve
+	#
+	# The feature decisions.md pages cite ADRs as
+	# [ADR-0007](../../decisions/0007-slug.md). Nothing checked those until now,
+	# and a wiki can carry dead ones for months: they render as links and only
+	# fail when someone clicks.
+	IFS=$WIKI_TAB
+	for md_rec in $mdlinks; do
+		IFS=$saved_ifs
+		[ -n "$md_rec" ] || continue
+		md_line=${md_rec%%:*}
+		md_rest=${md_rec#*:}
+		md_path=${md_rest%%:*}
+		md_href=${md_rest#*:}
+		[ -e "$md_path" ] || err "$f:$md_line relative link does not resolve: $md_href"
+		IFS=$WIKI_TAB
+	done
+	IFS=$saved_ifs
 
 	# ------ leftover template placeholders
-	if [ "$(value_of "$fm" status)" = "authored" ]; then
-		ph=$(grep -nE 'FEATURE_SLUG|FEATURE_NAME|PROJECT_NAME|PATH/TO|NNNN-slug|YYYY-MM-DD' "$f" | head -3)
-		if [ -n "$ph" ]; then
-			printf '%s\n' "$ph" | while IFS=: read -r ln rest; do
-				printf 'ERROR %s:%s unreplaced template placeholder: %s\n' "$f" "$ln" "$(printf '%s' "$rest" | cut -c1-60)" >&2
-			done
-			fails=$((fails + $(printf '%s\n' "$ph" | wc -l | tr -d ' ')))
-		fi
+	if [ "$v_status" = "authored" ] && [ -n "$placeholders" ]; then
+		IFS=$WIKI_TAB
+		for ph in $placeholders; do
+			IFS=$saved_ifs
+			[ -n "$ph" ] || continue
+			printf 'ERROR %s:%s unreplaced template placeholder: %s\n' "$f" "${ph%%:*}" "${ph#*:}" >&2
+			fails=$((fails + 1))
+			IFS=$WIKI_TAB
+		done
+		IFS=$saved_ifs
 	fi
 done
 
